@@ -1,54 +1,56 @@
-// backend/src/index.js
 import express from "express";
 import http from "http";
 import cors from "cors";
 import dotenv from "dotenv";
+
 import { createEventBus } from "./core/eventBus.js";
 import { initOBS } from "./modules/obs/index.js";
-import { bootstrapCaches } from "./core/bootstrap.js";
-import { loadTimers } from "./core/timers.js";
 import { initTwitch } from "./modules/twitch/index.js";
 import { initDiscord } from "./modules/discord/index.js";
+import { bootstrapCaches } from "./core/bootstrap.js";
+import { loadTimers } from "./core/timers.js";
 
-import apiRoutes from "./routes/index.js";
-import obsRoutes from "./routes/obs.js";
 import authRoutes from "./routes/auth.js";
-import streamerStatus from "./routes/streamerStatus.js";
-import TwitchEventSub  from "./routes/twitchEventSub.js";
+import obsRoutes from "./routes/obs.js";
+import apiRoutes from "./routes/index.js";
+import streamerStatusRoutes from "./routes/streamerStatus.js";
+import twitchCommandsRoutes from "./routes/twitchCommands.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
 
-
-dotenv.config({ path: process.env.NODE_ENV === "production" ? ".env.production" : ".env.local"});
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+// CORS (prod-safe; set FRONTEND_URL in env)
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "*",
+  credentials: true
+}));
 app.use(express.json());
 
 // Routes
 app.use("/api", apiRoutes);
 app.use("/api/obs", obsRoutes);
-app.use("/api/streamer", streamerStatus);
+app.use("/api/streamer", streamerStatusRoutes);
 app.use("/api/auth", authRoutes);
-app.use("/api/twitch/eventsub", TwitchEventSub);
+app.use("/api/twitch/commands", twitchCommandsRoutes);
 app.use("/api/twitch/eventsub", twitchEventSubRoutes);
 
-
-// Start WebSocket
+// WS bus
 const WS_PORT = Number(process.env.WS_PORT || 3002);
 createEventBus(WS_PORT);
 
-// Initialize subsystems
-await initOBS();
-await bootstrapCaches();
-await loadTimers();
+// Start stack
+await initOBS().catch(console.error);
+await bootstrapCaches().catch(console.error);
+await loadTimers().catch(console.error);
 
-// Delayed bot startup
-setTimeout(() => {
-  initTwitch().catch(console.error);
-  initDiscord().catch(console.error);
-}, 1500);
+// Delay bot init slightly so DB/OBS are ready
+setTimeout(async () => {
+  try { await initTwitch(); } catch (e) { console.error("Twitch init error:", e); }
+  try { await initDiscord(); } catch (e) { console.error("Discord init error:", e); }
+}, 800);
 
 const PORT = Number(process.env.PORT || 3000);
 server.listen(PORT, () => {

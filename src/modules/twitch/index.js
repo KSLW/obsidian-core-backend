@@ -1,166 +1,131 @@
-// backend/src/modules/twitch/index.js
 import tmi from "tmi.js";
 import axios from "axios";
+import crypto from "crypto";
+import dotenv from "dotenv";
 import { Streamer } from "../../models/Streamer.js";
 import { emitEvent } from "../../core/eventBus.js";
 import { getTwitchCommand } from "../../core/registry.js";
+dotenv.config();
 
 let twitchClient = null;
 let connected = false;
-let eventSubRegistered = false;
 
+/** simple hate-speech moderation list (expand later) */
+const BAN_REGEX = /(slur1|slur2|kill yourself|go back to)/i;
+
+/* App access token for EventSub */
 async function getAppAccessToken() {
-  try {
-    const { data } = await axios.post("https://id.twitch.tv/oauth2/token", null, {
-      params: {
-        client_id: process.env.TWITCH_CLIENT_ID,
-        client_secret: process.env.TWITCH_CLIENT_SECRET,
-        grant_type: "client_credentials",
-      },
-    });
-    return data.access_token;
-  } catch (err) {
-    console.error("❌ Failed to fetch App Access Token:", err.response?.data || err.message);
-    return null;
-  }
+  const res = await axios.post("https://id.twitch.tv/oauth2/token", null, {
+    params: {
+      client_id: process.env.TWITCH_CLIENT_ID,
+      client_secret: process.env.TWITCH_CLIENT_SECRET,
+      grant_type: "client_credentials",
+    },
+  });
+  return res.data.access_token;
 }
 
-
-/* ────────────────────────────────
-   🔔 Register EventSub for redemptions
-──────────────────────────────── */
-
-async function registerEventSubRedemption(broadcasterId) {
-  try {
-    const appToken = await getAppAccessToken();
-    if (!appToken) throw new Error("No app access token available");
-
-    await axios.post(
-      "https://api.twitch.tv/helix/eventsub/subscriptions",
-      {
-        type: "channel.channel_points_custom_reward_redemption.add",
-        version: "1",
-        condition: { broadcaster_user_id: broadcasterId },
-        transport: {
-          method: "webhook",
-          callback: `${process.env.PUBLIC_URL}/api/twitch/eventsub/callback`,
-          secret: process.env.TWITCH_EVENTSUB_SECRET,
-        },
-      },
-      {
-        headers: {
-          "Client-ID": process.env.TWITCH_CLIENT_ID,
-          Authorization: `Bearer ${appToken}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    console.log("✅ EventSub: Channel point redemption subscription created");
-  } catch (err) {
-    console.error("⚠️ EventSub registration failed:", err.response?.data || err.message);
-  }
-}
-
-/* ────────────────────────────────
-   💬 Send message
-──────────────────────────────── */
-export async function sendTwitchMessage(message, channel) {
-  if (!connected) throw new Error("Twitch not connected");
-  const target = channel || process.env.TWITCH_CHANNEL;
-  await twitchClient.say(target, message);
-  console.log(`🟣 Sent Twitch message to #${target}: ${message}`);
-}
-
-/* ────────────────────────────────
-   ⚙️ Run Twitch Action
-──────────────────────────────── */
-export async function runTwitchAction(type, params = {}) {
-  switch (type) {
-    case "send_message":
-      return sendTwitchMessage(params.message, params.channel);
-    default:
-      console.warn(`⚠️ Unknown Twitch action type: ${type}`);
-  }
-}
-
-/* ────────────────────────────────
-   🟣 Initialize Twitch Bot
-──────────────────────────────── */
 export async function initTwitch() {
-  try {
-    const activeStreamer = await Streamer.findOne({
-      "twitchAuth.accessToken": { $exists: true },
-    });
+  // choose the most recently updated streamer with twitch auth
+  const user = await Streamer.findOne({ "twitchAuth.accessToken": { $exists: true } });
+  const username = user?.twitchBot?.username || process.env.TWITCH_BOT_USERNAME;
+  const channel  = user?.twitchBot?.channel  || process.env.TWITCH_CHANNEL;
+  const token    = user?.twitchAuth?.accessToken || process.env.TWITCH_OAUTH_TOKEN;
 
-    const username =
-      activeStreamer?.twitchBot?.username || process.env.TWITCH_BOT_USERNAME;
-    const token =
-      activeStreamer?.twitchAuth?.accessToken || process.env.TWITCH_OAUTH_TOKEN;
-    const channel =
-      activeStreamer?.twitchBot?.channel || process.env.TWITCH_CHANNEL;
+  if (!username || !channel || !token) {
+    console.warn("⚠️ Twitch credentials missing — skipping init.");
+    return;
+  }
 
-    if (!username || !token || !channel) {
-      console.warn("⚠️ Twitch credentials missing — skipping init.");
+  twitchClient = new tmi.Client({
+    identity: { username, password: `oauth:${token.replace(/^oauth:/, "")}` },
+    channels: [channel],
+  });
+
+  twitchClient.on("connected", () => {
+    connected = true;
+    console.log(`🟣 Twitch bot connected as ${username} in #${channel}`);
+    emitEvent(user?._id || "global", "twitch.connected", { username, channel });
+  });
+
+  // Moderation + Commands
+  twitchClient.on("message", async (target, tags, message, self) => {
+    if (self) return;
+    const streamerId = user?._id || "global";
+    const display = tags["display-name"] || tags.username;
+    const text = message.trim();
+
+    // Moderation
+    if (BAN_REGEX.test(text)) {
+      await timeoutUser(display, 600, "Hate speech / slur");
+      await twitchClient.say(target, `⛔ Message removed. ${display} timed out.`);
+      emitEvent(streamerId, "twitch.moderation.timeout", { user: display, reason: "hate_speech" });
       return;
     }
 
-    // 🧠 Create chat client
-    twitchClient = new tmi.Client({
-      identity: {
-        username,
-        password: `oauth:${token.replace(/^oauth:/, "")}`,
-      },
-      channels: [channel],
-    });
-
-    // 🟣 Connected
-    twitchClient.on("connected", async () => {
-      connected = true;
-      console.log(`🟣 Twitch bot connected as ${username} in #${channel}`);
-      emitEvent("global", "twitchConnected", { username, channel });
-
-      // Register EventSub on first startup
-      if (activeStreamer?.twitchAuth?.accessToken && !eventSubRegistered) {
-        await registerEventSubRedemption(
-          activeStreamer.ownerId,
-          activeStreamer.twitchAuth.accessToken
-        );
-      }
-    });
-
-    // 💬 Handle incoming messages
-    twitchClient.on("message", async (target, tags, message, self) => {
-      if (self) return;
-      const user = tags["display-name"] || tags.username;
-      const msg = message.trim().toLowerCase();
-      const streamerId = "global";
-
-      // Check if the message matches a custom command
-      const cmd = getTwitchCommand(streamerId, msg.replace("!", ""));
-      if (cmd) {
-        await twitchClient.say(target, cmd.response);
-        emitEvent(streamerId, "twitchCommand", { user, command: msg });
+    // Commands
+    if (text.startsWith("!")) {
+      const name = text.slice(1).split(" ")[0].toLowerCase();
+      const cmd = getTwitchCommand(streamerId, name);
+      if (cmd?.response) {
+        await twitchClient.say(target, cmd.response.replace("{username}", display));
+        emitEvent(streamerId, "twitch.chat.command", { user: display, command: name });
         return;
       }
-
-      // Built-in fallback example
-      if (msg === "!hydrate") {
-        await twitchClient.say(target, `💧 Stay hydrated, ${user}!`);
-        emitEvent("global", "hydrateCommand", { user });
+      if (name === "hello") {
+        await twitchClient.say(target, `Hey ${display}! 👋`);
+        emitEvent(streamerId, "twitch.chat.command", { user: display, command: "hello" });
+        return;
       }
-    });
+    }
 
-    await twitchClient.connect();
-    console.log("✅ Twitch client initialized.");
-  } catch (err) {
-    console.error("❌ Twitch init failed:", err.message);
+    // Firehose
+    emitEvent(streamerId, "twitch.chat", { user: display, message: text });
+  });
+
+  await twitchClient.connect();
+  console.log("✅ Twitch client initialized.");
+
+  // Register EventSub for Channel Points (webhook)
+  if (process.env.PUBLIC_URL && process.env.TWITCH_EVENTSUB_SECRET) {
+    try {
+      const appToken = await getAppAccessToken();
+      await axios.post(
+        "https://api.twitch.tv/helix/eventsub/subscriptions",
+        {
+          type: "channel.channel_points_custom_reward_redemption.add",
+          version: "1",
+          condition: { broadcaster_user_id: user.ownerId },
+          transport: {
+            method: "webhook",
+            callback: `${process.env.PUBLIC_URL}/api/twitch/eventsub/callback`,
+            secret: process.env.TWITCH_EVENTSUB_SECRET,
+          },
+        },
+        { headers: { "Client-ID": process.env.TWITCH_CLIENT_ID, Authorization: `Bearer ${appToken}` } }
+      );
+      console.log("✅ EventSub registered (channel points redemptions).");
+    } catch (e) {
+      console.warn("⚠️ EventSub registration failed:", e.response?.data || e.message);
+    }
   }
 }
 
-/* ────────────────────────────────
-   📡 Connection State
-──────────────────────────────── */
-export function isTwitchConnected() {
-  return connected;
+export function isTwitchConnected() { return connected; }
+export async function sendTwitchMessage(message, channel) {
+  if (!connected) throw new Error("Twitch not connected");
+  const target = channel || (twitchClient.getChannels?.()[0]) || process.env.TWITCH_CHANNEL;
+  await twitchClient.say(target, message);
+  console.log(`🟣 Sent Twitch message -> ${target}: ${message}`);
+}
+export async function timeoutUser(username, seconds = 600, reason = "Timeout") {
+  if (!connected) throw new Error("Twitch not connected");
+  // tmi.js supports timeout if bot is mod
+  const chan = (twitchClient.getChannels?.()[0]) || `#${process.env.TWITCH_CHANNEL}`;
+  try {
+    await twitchClient.timeout(chan, username, seconds, reason);
+  } catch {
+    // fallback: send /timeout
+    await twitchClient.say(chan, `/timeout ${username} ${seconds} ${reason}`);
+  }
 }

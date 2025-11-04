@@ -1,21 +1,24 @@
 import { Automation } from "../models/Automation.js";
 import { emitEvent } from "./eventBus.js";
 
-let activeTimers = [];
+let active = [];
 
 export async function loadTimers() {
+  active.forEach(clearInterval);
+  active = [];
+
   const timers = await Automation.find({ "trigger.type": "timer", enabled: true });
   for (const t of timers) {
-    const interval = Math.max(5, Number(t.trigger?.interval || 60)); // seconds
+    const every = Number(t.trigger?.interval || 60);
     const id = setInterval(() => {
       emitEvent(t.streamerId || "global", "timer.tick", { timerId: t._id, name: t.name });
-    }, interval * 1000);
-    activeTimers.push({ id, timer: t });
+    }, every * 1000);
+    active.push(id);
   }
-  console.log(`⏱️ Loaded ${activeTimers.length} timers`);
+  console.log(`⏱️ Loaded ${active.length} timers`);
 }
 
 export function clearTimers() {
-  for (const t of activeTimers) clearInterval(t.id);
-  activeTimers = [];
+  active.forEach(clearInterval);
+  active = [];
 }

@@ -1,7 +1,7 @@
 import OBSWebSocket from "obs-websocket-js";
 import dotenv from "dotenv";
 import { emitEvent } from "../../core/eventBus.js";
-dotenv.config({ path: process.env.NODE_ENV === "production" ? ".env.production" : ".env.local"});
+dotenv.config();
 
 let obs = new OBSWebSocket();
 let connected = false;
@@ -13,7 +13,6 @@ export async function initOBS() {
     await obs.connect(url, password);
     connected = true;
     console.log("🎥 Connected to OBS WebSocket");
-
     registerObsEvents();
   } catch (err) {
     connected = false;
@@ -22,41 +21,44 @@ export async function initOBS() {
 }
 
 function registerObsEvents() {
-  obs.on("CurrentProgramSceneChanged", (data) => {
-    emitEvent("global", "sceneChanged", { scene: data.sceneName });
+  obs.on("CurrentProgramSceneChanged", (d) => {
+    emitEvent("global", "sceneChanged", { scene: d.sceneName });
   });
-
-  obs.on("SceneItemEnableStateChanged", (data) => {
-    emitEvent("global", "sourceToggled", {
-      sceneName: data.sceneName,
-      sourceName: data.sceneItemName,
-      enabled: data.sceneItemEnabled,
-    });
+  obs.on("InputMuteStateChanged", (d) => {
+    emitEvent("global", "muteChanged", { inputName: d.inputName, muted: d.inputMuted });
   });
-
   obs.on("ExitStarted", () => { connected = false; });
   obs.on("ConnectionClosed", () => { connected = false; });
 }
 
-export function isObsConnected() { return connected; }
-
+/* Scenes */
 export async function listScenes() {
   if (!connected) throw new Error("OBS not connected");
   const { scenes } = await obs.call("GetSceneList");
-  return scenes.map((s) => s.sceneName);
+  return scenes.map(s => s.sceneName);
 }
-
 export async function getCurrentScene() {
   if (!connected) throw new Error("OBS not connected");
   const { currentProgramSceneName } = await obs.call("GetCurrentProgramScene");
   return currentProgramSceneName;
 }
-
 export async function changeScene(sceneName) {
   if (!connected) throw new Error("OBS not connected");
   await obs.call("SetCurrentProgramScene", { sceneName });
   emitEvent("global", "sceneChanged", { scene: sceneName });
-  console.log(`🎬 Switched to scene: ${sceneName}`);
+}
+
+/* Sources / Audio */
+export async function toggleSource(sourceName) {
+  if (!connected) throw new Error("OBS not connected");
+  const { currentProgramSceneName } = await obs.call("GetCurrentProgramScene");
+  const { sceneItems } = await obs.call("GetSceneItemList", { sceneName: currentProgramSceneName });
+  const target = sceneItems.find(i => i.sourceName === sourceName);
+  if (!target) throw new Error(`Source '${sourceName}' not found in scene '${currentProgramSceneName}'`);
+  const newEnabled = !target.sceneItemEnabled;
+  await obs.call("SetSceneItemEnabled", { sceneName: currentProgramSceneName, sceneItemId: target.sceneItemId, sceneItemEnabled: newEnabled });
+  emitEvent("global", "sourceToggled", { scene: currentProgramSceneName, source: sourceName, visible: newEnabled });
+  return newEnabled;
 }
 
 export async function toggleMute(inputName) {
@@ -66,32 +68,16 @@ export async function toggleMute(inputName) {
   emitEvent("global", "muteChanged", { inputName, muted: !inputMuted });
   return !inputMuted;
 }
-
-export async function toggleSource(sourceName) {
+export async function setMute(inputName, mute = true) {
   if (!connected) throw new Error("OBS not connected");
-
-  const { currentProgramSceneName } = await obs.call("GetCurrentProgramScene");
-  const { sceneItems } = await obs.call("GetSceneItemList", { sceneName: currentProgramSceneName });
-
-  const target = sceneItems.find((i) => i.sourceName === sourceName);
-  if (!target) throw new Error(`Source "${sourceName}" not found in scene ${currentProgramSceneName}`);
-
-  const newState = !target.sceneItemEnabled;
-  await obs.call("SetSceneItemEnabled", {
-    sceneName: currentProgramSceneName,
-    sceneItemId: target.sceneItemId,
-    sceneItemEnabled: newState,
-  });
-
-  emitEvent("global", "sourceToggled", { scene: currentProgramSceneName, source: sourceName, visible: newState });
-  return newState;
+  await obs.call("SetInputMute", { inputName, inputMuted: mute });
+  emitEvent("global", "muteChanged", { inputName, muted: mute });
+}
+export async function toggleStream() {
+  if (!connected) throw new Error("OBS not connected");
+  const { outputActive } = await obs.call("GetStreamStatus");
+  await obs.call(outputActive ? "StopStream" : "StartStream");
+  emitEvent("global", "streamState", { active: !outputActive });
 }
 
-export async function runObsAction(type, params = {}) {
-  switch (type) {
-    case "change_scene": return changeScene(params.scene);
-    case "toggle_source": return toggleSource(params.source);
-    case "toggle_mute": return toggleMute(params.input);
-    default: console.warn(`⚠️ Unknown OBS action type: ${type}`);
-  }
-}
+export function isOBSConnected() { return connected; }
