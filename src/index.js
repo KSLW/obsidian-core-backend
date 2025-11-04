@@ -15,6 +15,8 @@ import obsRoutes from "./routes/obs.js";
 import authRoutes from "./routes/auth.js";
 import streamerStatus from "./routes/streamerStatus.js";
 import TwitchEventSub  from "./routes/twitchEventSub.js";
+import twitchEventSubRoutes from "./routes/twitchEventSub.js";
+
 
 dotenv.config({ path: process.env.NODE_ENV === "production" ? ".env.production" : ".env.local"});
 
@@ -30,6 +32,8 @@ app.use("/api/obs", obsRoutes);
 app.use("/api/streamer", streamerStatus);
 app.use("/api/auth", authRoutes);
 app.use("/api/twitch/eventsub", TwitchEventSub);
+app.use("/api/twitch/eventsub", twitchEventSubRoutes);
+
 
 // Start WebSocket
 const WS_PORT = Number(process.env.WS_PORT || 3002);
