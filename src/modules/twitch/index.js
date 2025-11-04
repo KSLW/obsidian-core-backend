@@ -9,16 +9,32 @@ let twitchClient = null;
 let connected = false;
 let eventSubRegistered = false;
 
+async function getAppAccessToken() {
+  try {
+    const { data } = await axios.post("https://id.twitch.tv/oauth2/token", null, {
+      params: {
+        client_id: process.env.TWITCH_CLIENT_ID,
+        client_secret: process.env.TWITCH_CLIENT_SECRET,
+        grant_type: "client_credentials",
+      },
+    });
+    return data.access_token;
+  } catch (err) {
+    console.error("❌ Failed to fetch App Access Token:", err.response?.data || err.message);
+    return null;
+  }
+}
+
+
 /* ────────────────────────────────
    🔔 Register EventSub for redemptions
 ──────────────────────────────── */
-async function registerEventSubRedemption(broadcasterId, accessToken) {
-  if (eventSubRegistered) {
-    console.log("ℹ️ EventSub already registered — skipping duplicate registration.");
-    return;
-  }
 
+async function registerEventSubRedemption(broadcasterId) {
   try {
+    const appToken = await getAppAccessToken();
+    if (!appToken) throw new Error("No app access token available");
+
     await axios.post(
       "https://api.twitch.tv/helix/eventsub/subscriptions",
       {
@@ -34,14 +50,13 @@ async function registerEventSubRedemption(broadcasterId, accessToken) {
       {
         headers: {
           "Client-ID": process.env.TWITCH_CLIENT_ID,
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${appToken}`,
           "Content-Type": "application/json",
         },
       }
     );
 
-    eventSubRegistered = true;
-    console.log("✅ EventSub: Channel point redemptions subscribed successfully");
+    console.log("✅ EventSub: Channel point redemption subscription created");
   } catch (err) {
     console.error("⚠️ EventSub registration failed:", err.response?.data || err.message);
   }
