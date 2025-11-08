@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { connectMongo } from "./config/database.js";
 import { createEventBus } from "./core/eventBus.js";
 import { logSystemEvent } from "./core/logger.js";
+import { autoSeedAll} from "./setup/autoSeed.js";
 
 import authRoutes from "./routes/auth.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
@@ -47,6 +48,7 @@ attachAutomationListeners();
 // Boot
 const PORT = Number(process.env.PORT || 3000);
 await connectMongo();
+await autoSeedAll();
 
 server.listen(PORT, async () => {
   console.log(`🌍 Server listening on port ${PORT}`);
