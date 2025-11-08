@@ -4,15 +4,18 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "pm2": "pm2 start ecosystem.config.cjs --env production"
   },
   "dependencies": {
     "@seald-io/nedb": "^4.0.4",
     "axios": "^1.7.4",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.19",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "mongoose": "^8.19.3",
     "nedb": "^1.8.0",
     "nedb-promise": "^2.0.1",
     "nedb-promises": "^6.2.3",
@@ -21,6 +24,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "pm2": "^6.0.13"
   }
 }

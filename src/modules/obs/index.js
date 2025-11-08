@@ -1,6 +1,8 @@
 import OBSWebSocket from "obs-websocket-js";
 import dotenv from "dotenv";
 import { emitEvent } from "../../core/eventBus.js";
+import { logOBSEvent } from "../../core/logger.js";
+
 dotenv.config();
 
 let obs = new OBSWebSocket();
@@ -23,6 +25,7 @@ export async function initOBS() {
 function registerObsEvents() {
   obs.on("CurrentProgramSceneChanged", (d) => {
     emitEvent("global", "sceneChanged", { scene: d.sceneName });
+    logOBSEvent({ type: "sceneChanged", meta: { scene: d.sceneName } });
   });
   obs.on("InputMuteStateChanged", (d) => {
     emitEvent("global", "muteChanged", { inputName: d.inputName, muted: d.inputMuted });
@@ -81,3 +84,5 @@ export async function toggleStream() {
 }
 
 export function isOBSConnected() { return connected; }
+
+export { obs };

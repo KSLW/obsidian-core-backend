@@ -1,32 +1,54 @@
+// backend/src/core/bootstrap.js
 import { Streamer } from "../models/Streamer.js";
-import { Command } from "../models/Command.js";
-import { Automation } from "../models/Automation.js";
-import { setCommands, setAutomations, setTwitchCommands } from "./registry.js";
+import { setCommands, setTwitchCommands } from "./registry.js";
+import { initTwitch, registerEventSubRedemption } from "../modules/twitch/index.js";
+import { initDiscord } from "../modules/discord/index.js";
 
+/**
+ * Bootstraps all known streamers from the database.
+ * Rebuilds in-memory caches and ensures Twitch EventSub hooks are registered.
+ */
 export async function bootstrapCaches() {
-  // Prefer real OAuth’d streamer; fallback to DEV if configured
-  let real = await Streamer.findOne({ "twitchAuth.accessToken": { $exists: true } });
-  if (real) {
-    console.log(`✅ Using real streamer '${real.displayName}'`);
-  } else if (process.env.DEV_STREAMER_OWNER_ID) {
-    const ownerId = process.env.DEV_STREAMER_OWNER_ID;
-    const s = await Streamer.findOne({ ownerId }) || await Streamer.create({
-      ownerId,
-      displayName: process.env.DEV_STREAMER_DISPLAY || "Dev Streamer",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    console.log(`✅ Dev streamer '${s.displayName}' ready`);
-  }
+  try {
+    const streamers = await Streamer.find({});
+    if (!streamers || streamers.length === 0) {
+      console.warn("⚠️ No streamers found — nothing to bootstrap yet.");
+      return;
+    }
 
-  const all = await Streamer.find({});
-  for (const s of all) {
-    const cmds = await Command.find({ streamerId: s._id, enabled: true });
-    const autos = await Automation.find({ streamerId: s._id, enabled: true });
-    setCommands(s._id, cmds);
-    setTwitchCommands(s._id, cmds.filter(c => (c.platforms || []).includes("twitch")));
-    setAutomations(s._id, autos);
-  }
+    console.log(`📚 Cache primed for ${streamers.length} streamer(s) with Twitch + automations.`);
 
-  console.log(`📚 Cache primed for ${all.length} streamer(s).`);
+    for (const s of streamers) {
+      const id = s._id || s.ownerId || "global";
+
+      // ✅ Twitch commands
+      if (s.twitchCommands?.length) {
+        setTwitchCommands(id, s.twitchCommands);
+      }
+
+      // ✅ Generic commands
+      if (s.commands?.length) {
+        setCommands(id, s.commands);
+      }
+
+      // ✅ Reconnect Twitch
+      if (s.twitchAuth?.accessToken) {
+        console.log(`🟣 Auto-connecting Twitch for ${s.displayName}`);
+        await initTwitch();
+
+        // 👇 Auto re-register EventSub
+        console.log(`🔄 Ensuring EventSub for ${s.displayName}`);
+        await registerEventSubRedemption(s.ownerId, s.twitchAuth.accessToken);
+      }
+
+      // ✅ Reconnect Discord
+      if (s.discordAuth?.accessToken) {
+        console.log(`💬 Auto-connecting Discord for ${s.displayName}`);
+        await initDiscord();
+      }
+    }
+
+  } catch (err) {
+    console.error("❌ bootstrapCaches failed:", err.message);
+  }
 }

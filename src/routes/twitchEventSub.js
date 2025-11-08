@@ -1,46 +1,81 @@
+// backend/src/routes/twitchEventSub.js
 import express from "express";
 import crypto from "crypto";
 import { emitEvent } from "../core/eventBus.js";
+import { runAutomations } from "../engine/automations.js";
+import { logTwitchEvent } from "../core/logger.js";
 
-const router = express.Router();
+export const router = express.Router();
 
-// Verify the HMAC signature from Twitch
+/**
+ * Verify Twitch HMAC Signature
+ */
 function verifyTwitchSignature(req) {
-  const messageId = req.header("Twitch-Eventsub-Message-Id");
-  const timestamp = req.header("Twitch-Eventsub-Message-Timestamp");
-  const signature = req.header("Twitch-Eventsub-Message-Signature");
+  const messageId = req.headers["twitch-eventsub-message-id"];
+  const timestamp = req.headers["twitch-eventsub-message-timestamp"];
+  const signature = req.headers["twitch-eventsub-message-signature"];
+  const secret = process.env.TWITCH_EVENTSUB_SECRET;
+
   if (!messageId || !timestamp || !signature) return false;
 
-  const body = JSON.stringify(req.body);
-  const message = messageId + timestamp + body;
+  const computedHmac = crypto
+    .createHmac("sha256", secret)
+    .update(messageId + timestamp + JSON.stringify(req.body))
+    .digest("hex");
 
-  const hmac = crypto.createHmac("sha256", process.env.TWITCH_EVENTSUB_SECRET);
-  const computed = "sha256=" + hmac.update(message).digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed));
+  return `sha256=${computedHmac}` === signature;
 }
 
-router.post("/callback", express.json({ type: "*/*" }), (req, res) => {
-  const msgType = req.header("Twitch-Eventsub-Message-Type");
-
-  if (msgType === "webhook_callback_verification") {
-    return res.status(200).send(req.body.challenge);
-  }
-
+/**
+ * EventSub callback endpoint
+ */
+router.post("/callback", express.json(), async (req, res) => {
+  // Verify Twitch signature
   if (!verifyTwitchSignature(req)) {
+    console.warn("⚠️ Invalid Twitch EventSub signature");
     return res.status(403).send("Invalid signature");
   }
 
-  if (msgType === "notification") {
-    const sub = req.body.subscription?.type;
-    const event = req.body.event;
+  const messageType = req.headers["twitch-eventsub-message-type"];
+  const event = req.body.event;
 
-    if (sub === "channel.channel_points_custom_reward_redemption.add") {
-      // You can map broadcaster_user_id -> your streamerId if you store it
-      emitEvent("global", "twitch.redemption", { redemption: event });
-    }
+  // ✅ Handle verification challenge
+  if (messageType === "webhook_callback_verification") {
+    console.log("✅ EventSub verified by Twitch");
+    return res.status(200).send(req.body.challenge);
   }
 
-  return res.sendStatus(200);
-});
+  // ✅ Handle notification event
+  if (messageType === "notification") {
+    if (req.body.subscription.type === "channel.channel_points_custom_reward_redemption.add") {
+      console.log(`🎁 Redemption received: ${event.user_name} redeemed "${event.reward.title}"`);
+      
+      // Log it
+      await logTwitchEvent({
+        type: "redemption",
+        user: event.user_name,
+        channel: event.broadcaster_user_name,
+        meta: {
+          reward: event.reward.title,
+          cost: event.reward.cost,
+          input: event.user_input,
+        },
+      });
 
-export default router;
+      // Emit to internal systems
+      emitEvent(event.broadcaster_user_id, "twitchRedemption", event);
+
+      // Run any linked automations
+      await runAutomations("twitchRedemption", event);
+    }
+    return res.status(200).send("OK");
+  }
+
+  // ✅ Handle revoked subscriptions
+  if (messageType === "revocation") {
+    console.warn(`⚠️ EventSub subscription revoked: ${req.body.subscription.id}`);
+    return res.status(204).send();
+  }
+
+  return res.status(200).send("Unhandled event");
+});
