@@ -5,7 +5,6 @@ import tmi from "tmi.js";
 import axios from "axios";
 import { Streamer } from "../../models/Streamer.js";
 import { emitEvent } from "../../core/eventBus.js";
-import { getTwitchCommand } from "../../core/registry.js";
 import { logTwitchEvent, logModerationEvent } from "../../core/logger.js";
 import { checkMessageSafety } from "../../core/moderation.js";
 import { getAppAccessToken, refreshTwitchToken } from "./auth.js";
@@ -164,6 +163,22 @@ export async function initTwitch() {
     }
 
     emitEvent(streamerId, "twitch.chat", { user: display, message: text });
+
+    // Chat commands:
+emitEvent(streamerId, "twitch.chat.command", {
+  command: name,           // "hydrate"
+  user: display,           // "SomeViewer"
+  message: text,           // raw message
+});
+
+// Channel point redemptions (from EventSub handler):
+emitEvent(streamerId, "twitch.redemption", {
+  reward: redemptionTitleOrId,
+  user: userDisplay,
+  cost: redemptionCost,
+  input: userInput,
+});
+
   });
 
   /* ────────────────────────────────

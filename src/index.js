@@ -10,6 +10,8 @@ import { logSystemEvent } from "./core/logger.js";
 
 import authRoutes from "./routes/auth.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
+import automationsRoutes from "./routes/automations.js";
+import { attachAutomationListeners } from "./engine/automationEngine.js";
 
 import { initTwitch } from "./modules/twitch/index.js";
 
@@ -35,10 +37,12 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/twitch/eventsub", twitchEventSubRoutes);
+app.use("/api/automations", automationsRoutes);
 
 // WebSocket Event Bus
 const WS_PORT = Number(process.env.WS_PORT || 3002);
 createEventBus(WS_PORT);
+attachAutomationListeners();
 
 // Boot
 const PORT = Number(process.env.PORT || 3000);
