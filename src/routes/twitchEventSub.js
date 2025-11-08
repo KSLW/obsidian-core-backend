@@ -48,8 +48,6 @@ router.post("/callback", async (req, res) => {
       };
 
       await logTwitchEvent("redemption", data);
-      emitEvent("global", "twitch.redemption", data);
-
       emitEvent(streamerId, "twitch.redemption", {
       user: body.event.user_name,
       reward: body.event.reward.title,
