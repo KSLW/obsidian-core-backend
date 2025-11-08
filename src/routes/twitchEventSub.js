@@ -1,81 +1,60 @@
-// backend/src/routes/twitchEventSub.js
+// src/routes/twitchEventSub.js
 import express from "express";
 import crypto from "crypto";
 import { emitEvent } from "../core/eventBus.js";
-import { runAutomations } from "../engine/automations.js";
 import { logTwitchEvent } from "../core/logger.js";
 
-export const router = express.Router();
+const router = express.Router();
 
-/**
- * Verify Twitch HMAC Signature
- */
-function verifyTwitchSignature(req) {
-  const messageId = req.headers["twitch-eventsub-message-id"];
-  const timestamp = req.headers["twitch-eventsub-message-timestamp"];
-  const signature = req.headers["twitch-eventsub-message-signature"];
+// raw body middleware for signature check
+router.use("/callback", express.raw({ type: "*/*" }));
+
+router.post("/callback", async (req, res) => {
+  const messageId = req.header("Twitch-Eventsub-Message-Id") || "";
+  const timestamp = req.header("Twitch-Eventsub-Message-Timestamp") || "";
+  const signature = req.header("Twitch-Eventsub-Message-Signature") || "";
+  const type = req.header("Twitch-Eventsub-Message-Type") || "";
+
   const secret = process.env.TWITCH_EVENTSUB_SECRET;
+  if (!secret) return res.status(500).send("Missing secret");
 
-  if (!messageId || !timestamp || !signature) return false;
+  const hmacMessage = messageId + timestamp + req.body.toString("utf8");
+  const hmac = crypto.createHmac("sha256", secret).update(hmacMessage).digest("hex");
+  const expected = `sha256=${hmac}`;
 
-  const computedHmac = crypto
-    .createHmac("sha256", secret)
-    .update(messageId + timestamp + JSON.stringify(req.body))
-    .digest("hex");
-
-  return `sha256=${computedHmac}` === signature;
-}
-
-/**
- * EventSub callback endpoint
- */
-router.post("/callback", express.json(), async (req, res) => {
-  // Verify Twitch signature
-  if (!verifyTwitchSignature(req)) {
-    console.warn("⚠️ Invalid Twitch EventSub signature");
+  if (signature !== expected) {
+    console.warn("⚠️ Invalid signature for EventSub");
     return res.status(403).send("Invalid signature");
   }
 
-  const messageType = req.headers["twitch-eventsub-message-type"];
-  const event = req.body.event;
+  const body = JSON.parse(req.body.toString("utf8"));
 
-  // ✅ Handle verification challenge
-  if (messageType === "webhook_callback_verification") {
-    console.log("✅ EventSub verified by Twitch");
-    return res.status(200).send(req.body.challenge);
+  // Challenge handshake
+  if (type === "webhook_callback_verification") {
+    return res.status(200).send(body.challenge);
   }
 
-  // ✅ Handle notification event
-  if (messageType === "notification") {
-    if (req.body.subscription.type === "channel.channel_points_custom_reward_redemption.add") {
-      console.log(`🎁 Redemption received: ${event.user_name} redeemed "${event.reward.title}"`);
-      
-      // Log it
-      await logTwitchEvent({
-        type: "redemption",
+  // Notification
+  if (type === "notification") {
+    const { subscription, event } = body;
+
+    if (subscription?.type === "channel.channel_points_custom_reward_redemption.add") {
+      const data = {
+        reward: event.reward?.title,
         user: event.user_name,
-        channel: event.broadcaster_user_name,
-        meta: {
-          reward: event.reward.title,
-          cost: event.reward.cost,
-          input: event.user_input,
-        },
-      });
+        userId: event.user_id,
+        input: event.user_input,
+        status: event.status,
+      };
 
-      // Emit to internal systems
-      emitEvent(event.broadcaster_user_id, "twitchRedemption", event);
-
-      // Run any linked automations
-      await runAutomations("twitchRedemption", event);
+      await logTwitchEvent("redemption", data);
+      emitEvent("global", "twitch.redemption", data);
     }
+
     return res.status(200).send("OK");
   }
 
-  // ✅ Handle revoked subscriptions
-  if (messageType === "revocation") {
-    console.warn(`⚠️ EventSub subscription revoked: ${req.body.subscription.id}`);
-    return res.status(204).send();
-  }
-
-  return res.status(200).send("Unhandled event");
+  return res.status(200).send("OK");
 });
+
+export default router;

@@ -1,44 +1,115 @@
-// backend/src/models/Streamer.js
+// src/models/Streamer.js
 import mongoose from "mongoose";
 
-const streamerSchema = new mongoose.Schema({
-  ownerId: { type: String, required: true, unique: true },
-  displayName: String,
-  twitchAuth: {
+const TwitchAuthSchema = new mongoose.Schema(
+  {
     accessToken: String,
     refreshToken: String,
-    expiresIn: Number,
+    scope: [String],
     obtainedAt: Date,
+    expiresAt: Date, // when the user token expires
   },
-  twitchBot: {
-    username: String,
-    channel: String,
-  },
-  discordAuth: {
-    accessToken: String,
-    refreshToken: String,
-    expiresIn: Number,
-    obtainedAt: Date,
-  },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-});
+  { _id: false }
+);
 
-// 🔹 Helper to create or update streamer in one call
-streamerSchema.statics.updateOrCreate = async function (query, data) {
-  const existing = await this.findOne(query);
-  if (existing) {
-    Object.assign(existing, data, { updatedAt: Date.now() });
-    return await existing.save();
-  } else {
-    return await this.create({ ...query, ...data, createdAt: Date.now() });
-  }
+const TwitchBotSchema = new mongoose.Schema(
+  {
+    username: String, // channel login (lowercase)
+    channel: String,  // usually same as username
+  },
+  { _id: false }
+);
+
+const DiscordAuthSchema = new mongoose.Schema(
+  {
+    accessToken: String,
+    refreshToken: String,
+    scope: [String],
+    obtainedAt: Date,
+    expiresAt: Date,
+  },
+  { _id: false }
+);
+
+const StreamerSchema = new mongoose.Schema(
+  {
+    ownerId: { type: String, index: true, unique: true }, // Twitch user id (primary identity)
+    displayName: String,
+
+    // Twitch
+    twitchAuth: TwitchAuthSchema,
+    twitchBot: TwitchBotSchema,
+
+    // Discord (optional)
+    discordAuth: DiscordAuthSchema,
+
+    // Moderation + misc (kept minimal; your moderation module owns details)
+    settings: {
+      type: Object,
+      default: {},
+    },
+  },
+  { timestamps: true }
+);
+
+/* ─────────────────────────────────────────
+   Static helpers
+────────────────────────────────────────── */
+StreamerSchema.statics.updateOrCreateByOwner = async function (ownerId, update) {
+  return this.findOneAndUpdate(
+    { ownerId },
+    { $set: update },
+    { upsert: true, new: true }
+  ).lean(false);
 };
 
-// 🔹 Helper to update specific fields
-streamerSchema.statics.updateFields = async function (ownerId, data) {
-  return await this.findOneAndUpdate({ ownerId }, data, { new: true });
+StreamerSchema.statics.setTwitchAuth = async function (ownerId, auth, bot = null) {
+  const patch = {
+    twitchAuth: {
+      accessToken: auth.accessToken,
+      refreshToken: auth.refreshToken,
+      scope: auth.scope || [],
+      obtainedAt: new Date(auth.obtainedAt || Date.now()),
+      // store absolute expiry to avoid guessing
+      expiresAt: auth.expiresIn
+        ? new Date(Date.now() + auth.expiresIn * 1000)
+        : auth.expiresAt || null,
+    },
+  };
+  if (bot) patch.twitchBot = bot;
+
+  return this.findOneAndUpdate(
+    { ownerId },
+    { $set: patch },
+    { upsert: true, new: true }
+  ).lean(false);
+};
+
+StreamerSchema.statics.setDiscordAuth = async function (ownerId, auth) {
+  return this.findOneAndUpdate(
+    { ownerId },
+    {
+      $set: {
+        discordAuth: {
+          accessToken: auth.accessToken,
+          refreshToken: auth.refreshToken,
+          scope: auth.scope || [],
+          obtainedAt: new Date(auth.obtainedAt || Date.now()),
+          expiresAt: auth.expiresIn
+            ? new Date(Date.now() + auth.expiresIn * 1000)
+            : auth.expiresAt || null,
+        },
+      },
+    },
+    { upsert: true, new: true }
+  ).lean(false);
+};
+
+StreamerSchema.statics.getActiveStreamer = async function () {
+  return this.findOne({ "twitchAuth.accessToken": { $exists: true } })
+    .sort({ updatedAt: -1 })
+    .lean(false);
 };
 
 export const Streamer =
-  mongoose.models.Streamer || mongoose.model("Streamer", streamerSchema);
+  mongoose.models.Streamer || mongoose.model("Streamer", StreamerSchema);

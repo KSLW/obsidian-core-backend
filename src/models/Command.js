@@ -1,21 +1,23 @@
-import Datastore from "@seald-io/nedb";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+// src/models/Command.js
+import mongoose from "mongoose";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, "../../data");
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-
-const db = new Datastore({ filename: path.join(dataDir, "commands.db"), autoload: true });
-
-export const Command = {
-  async find(q = {}) { return db.findAsync(q); },
-  async findOne(q = {}) { return db.findOneAsync(q); },
-  async create(data) { return db.insertAsync({ ...data, createdAt: Date.now(), updatedAt: Date.now(), enabled: data.enabled !== false }); },
-  async update(id, updates) {
-    await db.updateAsync({ _id: id }, { $set: { ...updates, updatedAt: Date.now() } });
-    return db.findOneAsync({ _id: id });
+const commandSchema = new mongoose.Schema(
+  {
+    streamerId: { type: String, required: true },
+    name: { type: String, required: true, lowercase: true, trim: true },
+    response: { type: String, required: true },
+    enabled: { type: Boolean, default: true },
+    cooldown: { type: Number, default: 10 }, // seconds
+    lastUsed: { type: Date, default: null },
+    permissions: {
+      type: String,
+      enum: ["everyone", "subscribers", "mods", "owner"],
+      default: "everyone",
+    },
   },
-  async remove(id) { return db.removeAsync({ _id: id }, {}); },
-};
+  { timestamps: true }
+);
+
+commandSchema.index({ streamerId: 1, name: 1 }, { unique: true });
+
+export const Command = mongoose.model("Command", commandSchema);
