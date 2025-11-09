@@ -4,58 +4,51 @@ import dotenv from "dotenv";
 import { Streamer } from "../../models/Streamer.js";
 dotenv.config({ path: process.env.ENV_PATH || ".env" });
 
-/**
- * Fetch an App Access Token for EventSub or server-to-server requests
- */
-export async function getAppAccessToken() {
-  const url = "https://id.twitch.tv/oauth2/token";
-  const params = {
-    client_id: process.env.TWITCH_CLIENT_ID,
-    client_secret: process.env.TWITCH_CLIENT_SECRET,
-    grant_type: "client_credentials",
-  };
-
-  try {
-    const res = await axios.post(url, null, { params });
-    return res.data.access_token;
-  } catch (e) {
-    console.error("⚠️ Failed to fetch app access token:", e.response?.data || e.message);
-    throw e;
-  }
-}
-
-/**
- * Refresh a Twitch user access token
- */
+// refresh streamer token
 export async function refreshTwitchToken(ownerId) {
-  const streamer = await Streamer.findOne({ ownerId });
-  if (!streamer?.twitchAuth?.refreshToken) {
-    console.warn("⚠️ No refresh token for streamer:", ownerId);
-    return null;
-  }
-
   try {
+    const user = await Streamer.findOne({ ownerId });
+    if (!user?.twitchAuth?.refreshToken) throw new Error("Missing refresh token");
+
     const res = await axios.post("https://id.twitch.tv/oauth2/token", null, {
       params: {
         grant_type: "refresh_token",
-        refresh_token: streamer.twitchAuth.refreshToken,
+        refresh_token: user.twitchAuth.refreshToken,
         client_id: process.env.TWITCH_CLIENT_ID,
         client_secret: process.env.TWITCH_CLIENT_SECRET,
       },
     });
 
-    streamer.twitchAuth.accessToken = res.data.access_token;
-    streamer.twitchAuth.refreshToken = res.data.refresh_token || streamer.twitchAuth.refreshToken;
-    streamer.twitchAuth.obtainedAt = Date.now();
-    await streamer.save();
+    user.twitchAuth.accessToken = res.data.access_token;
+    user.twitchAuth.refreshToken = res.data.refresh_token;
+    user.twitchAuth.expiresIn = res.data.expires_in;
+    await user.save();
 
-    console.log(`🔁 Twitch token refreshed for ${streamer.displayName || streamer.ownerId}`);
+    console.log("🔁 Twitch token refreshed successfully");
     return res.data.access_token;
   } catch (err) {
-    console.error("⚠️ Twitch token refresh failed:", err.response?.data || err.message);
+    console.warn("⚠️ Twitch token refresh failed:", err.response?.data || err.message);
     return null;
   }
 }
+
+// app access token for EventSub
+export async function getAppAccessToken() {
+  try {
+    const res = await axios.post("https://id.twitch.tv/oauth2/token", null, {
+      params: {
+        client_id: process.env.TWITCH_CLIENT_ID,
+        client_secret: process.env.TWITCH_CLIENT_SECRET,
+        grant_type: "client_credentials",
+      },
+    });
+    return res.data.access_token;
+  } catch (err) {
+    console.error("❌ Failed to get app access token:", err.response?.data || err.message);
+    return null;
+  }
+}
+
 
 // 🧠 Simple background refresher loop
 export function startTokenRefreshLoop() {

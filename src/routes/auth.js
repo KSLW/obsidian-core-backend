@@ -5,16 +5,13 @@ import dotenv from "dotenv";
 import { Streamer } from "../models/Streamer.js";
 import { provisionDefaultsForStreamer } from "../utils/provisionDefaults.js";
 
-const router = express.Router();
 dotenv.config({ path: process.env.ENV_PATH || ".env" });
+const router = express.Router();
 
-/**
- * Step 1: Redirect user to Twitch for authorization
- */
-router.get("/twitch", (req, res) => {
-  const clientId = process.env.TWITCH_CLIENT_ID;
-  const redirectUri = `${process.env.BACKEND_URL}/api/auth/twitch/callback`;
-  const scope = [
+const redirectUri = `${process.env.BACKEND_URL}/api/auth/twitch/callback`;
+
+router.get("/twitch/login", (req, res) => {
+  const scopes = [
     "chat:read",
     "chat:edit",
     "channel:read:redemptions",
@@ -23,32 +20,22 @@ router.get("/twitch", (req, res) => {
     "moderator:manage:banned_users",
     "channel:read:subscriptions",
     "user:read:email",
-  ].join(" ");
-
-  const authUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+  ];
+  const twitchUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${encodeURIComponent(
     redirectUri
-  )}&response_type=code&scope=${encodeURIComponent(scope)}&state=frontend`;
+  )}&response_type=code&scope=${encodeURIComponent(scopes.join(" "))}&state=frontend`;
 
-  console.log("🔗 Redirecting to Twitch OAuth:", authUrl);
-  return res.redirect(authUrl);
+  res.redirect(twitchUrl);
 });
 
-/**
- * Step 2: Handle Twitch callback and persist credentials
- */
 router.get("/twitch/callback", async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.status(400).send("Missing OAuth code");
-
-  const redirectUri = `${process.env.BACKEND_URL}/api/auth/twitch/callback`;
-
-  console.log("🔑 OAuth Debug:", {
-    client_id: process.env.TWITCH_CLIENT_ID,
-    redirect_uri: redirectUri,
-  });
+  const { code, error } = req.query;
+  if (error) {
+    console.error("Twitch OAuth error:", error);
+    return res.status(400).send("Twitch OAuth failed: " + error);
+  }
 
   try {
-    // 1️⃣ Exchange the code for access/refresh tokens
     const tokenRes = await axios.post("https://id.twitch.tv/oauth2/token", null, {
       params: {
         client_id: process.env.TWITCH_CLIENT_ID,
@@ -59,56 +46,40 @@ router.get("/twitch/callback", async (req, res) => {
       },
     });
 
-    const { access_token, refresh_token, expires_in, scope } = tokenRes.data;
+    const accessToken = tokenRes.data.access_token;
+    const refreshToken = tokenRes.data.refresh_token;
 
-    // 2️⃣ Fetch user info
     const userRes = await axios.get("https://api.twitch.tv/helix/users", {
       headers: {
         "Client-ID": process.env.TWITCH_CLIENT_ID,
-        Authorization: `Bearer ${access_token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     });
 
     const u = userRes.data.data?.[0];
-    if (!u) throw new Error("No Twitch user returned from API");
+    if (!u?.id) throw new Error("No Twitch user returned");
 
-    // 3️⃣ Upsert streamer record
-    const streamerDoc = await Streamer.findOneAndUpdate(
-      { twitchId: u.id },
+    await Streamer.updateOne(
+      { ownerId: u.id },
       {
-        twitchId: u.id,
-        twitchAuth: {
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          scope,
-          obtainedAt: Date.now(),
-          expiresIn: expires_in,
-        },
-        twitchBot: {
-          username: u.login,
-          channel: u.login,
-        },
+        twitchAuth: { accessToken, refreshToken, scope: tokenRes.data.scope || [], obtainedAt: Date.now() },
+        twitchBot: { username: u.login, channel: u.login },
         displayName: u.display_name,
       },
-      { upsert: true, new: true }
+      { upsert: true }
     );
 
-    // 4️⃣ Provision defaults (commands, automations, moderation)
-    await provisionDefaultsForStreamer(streamerDoc._id);
+    const streamer = await Streamer.findOne({ ownerId: u.id });
+    if (streamer) await provisionDefaultsForStreamer(streamer._id.toString());
 
-    console.log(`✅ Twitch OAuth success for ${u.display_name} (${u.login})`);
-
-    // 5️⃣ Redirect to frontend dashboard
-    const frontend = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
-    return res.redirect(`${frontend}/dashboard`);
+    const redirect = `${process.env.FRONTEND_URL}/dashboard`;
+    res.redirect(redirect);
   } catch (err) {
-    console.error("❌ Twitch OAuth failed:", err.response?.data || err.message);
-    return res.status(500).json({
-      error: "Twitch OAuth failed",
-      details: err.response?.data || err.message,
-    });
+    console.error("❌ Twitch OAuth exchange failed:", err.response?.data || err.message);
+    res.status(500).send("Twitch OAuth failed");
   }
 });
+
 /* ─────────────────────────────────────────
    DISCORD OAUTH (optional – safe to keep)
 ────────────────────────────────────────── */
