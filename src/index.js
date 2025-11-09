@@ -7,7 +7,9 @@ import dotenv from "dotenv";
 import { connectMongo } from "./config/database.js";
 import { createEventBus } from "./core/eventBus.js";
 import { logSystemEvent } from "./core/logger.js";
-import { autoSeedAll} from "./setup/autoSeed.js";
+import { autoSeedAll } from "./setup/autoSeed.js";
+import { provisionDefaultsForStreamer } from "./utils/provisionDefaults.js";
+import { Streamer } from "./models/Streamer.js";
 
 import authRoutes from "./routes/auth.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
@@ -47,8 +49,18 @@ attachAutomationListeners();
 
 // Boot
 const PORT = Number(process.env.PORT || 3000);
+
+// Make sure Mongo is up before anything else
 await connectMongo();
+
+// Seed any global defaults once (idempotent)
 await autoSeedAll();
+
+// Provision per-streamer defaults (idempotent)
+const mainStreamer = await Streamer.findOne({ twitchUsername: "logicallysleepy" });
+if (mainStreamer) {
+  await provisionDefaultsForStreamer(mainStreamer._id.toString());
+}
 
 server.listen(PORT, async () => {
   console.log(`🌍 Server listening on port ${PORT}`);
@@ -57,7 +69,7 @@ server.listen(PORT, async () => {
   try {
     await initTwitch();
   } catch (e) {
-    console.error("Twitch init error:", e.message);
+    console.error("Twitch init error:", e?.message || e);
   }
 
   await logSystemEvent("backend_boot", { port: PORT, ws: WS_PORT });

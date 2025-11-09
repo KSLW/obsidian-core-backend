@@ -1,87 +1,82 @@
 // src/core/logger.js
 import mongoose from "mongoose";
+import { Log } from "../models/Log.js";
 
-// ────────────────────────────────
-// Log Schema (shared for all types)
-// ────────────────────────────────
-const LogSchema = new mongoose.Schema(
-  {
-    streamerId: { type: String, required: true },
-    type: { type: String, required: true }, // twitch, discord, obs, moderation, automation, system
-    subtype: { type: String },
-    user: { type: String },
-    channel: { type: String },
-    message: { type: String },
-    meta: { type: Object },
-  },
-  { timestamps: true }
-);
+/**
+ * Normalizes the subtype field:
+ * Accepts either a string or an object, but stores an object-friendly string version.
+ */
+function normalizeSubtype(value) {
+  if (!value) return "unknown";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
 
-export const Log = mongoose.models.Log || mongoose.model("Log", LogSchema);
-
-// ────────────────────────────────
-// Generic Writer
-// ────────────────────────────────
-async function writeLog(type, data) {
+/* ─────────────────────────────────────────────
+   🧩 Generic System Log
+─────────────────────────────────────────────── */
+export async function logSystemEvent(subtype, data = {}) {
   try {
-    await Log.create({ ...data, type });
+    const log = new Log({
+      type: "system",
+      subtype: normalizeSubtype(subtype),
+      meta: data,
+    });
+    await log.save();
+    console.log(`📜 [System] ${subtype} logged.`);
   } catch (err) {
-    console.warn(`⚠️ Failed to save ${type} log:`, err.message);
+    console.warn("⚠️ Failed to save system log:", err.message);
   }
 }
 
-// ────────────────────────────────
-// Twitch Events
-// ────────────────────────────────
-export async function logTwitchEvent(subtype, data, streamerId = "global") {
-  await writeLog("twitch", { ...data, streamerId, subtype });
+/* ─────────────────────────────────────────────
+   🎥 Twitch Events
+─────────────────────────────────────────────── */
+export async function logTwitchEvent(subtype, data = {}, streamerId = "global") {
+  try {
+    const log = new Log({
+      type: "twitch",
+      subtype: normalizeSubtype(subtype),
+      streamerId,
+      meta: data,
+    });
+    await log.save();
+  } catch (err) {
+    console.warn("⚠️ Failed to save twitch log:", err.message);
+  }
 }
 
-// ────────────────────────────────
-// Discord Events
-// ────────────────────────────────
-export async function logDiscordEvent(subtype, data, streamerId = "global") {
-  await writeLog("discord", { ...data, streamerId, subtype });
+/* ─────────────────────────────────────────────
+   🛡️ Moderation Events
+─────────────────────────────────────────────── */
+export async function logModerationEvent(streamerId, details = {}) {
+  try {
+    const log = new Log({
+      type: "moderation",
+      subtype: normalizeSubtype(details.action || "unknown"),
+      streamerId,
+      meta: details,
+    });
+    await log.save();
+  } catch (err) {
+    console.warn("⚠️ Failed to save moderation log:", err.message);
+  }
 }
 
-// ────────────────────────────────
-// OBS Events
-// ────────────────────────────────
-export async function logOBSEvent(subtype, data, streamerId = "global") {
-  await writeLog("obs", { ...data, streamerId, subtype });
-}
-
-// ────────────────────────────────
-// Moderation Events
-// ────────────────────────────────
-export async function logModerationEvent(streamerId, data) {
-  await writeLog("moderation", { ...data, streamerId, subtype: "action" });
-  console.log(`🛡️ [Moderation] ${data.user || "Unknown"} → ${data.action}`);
-}
-
-// ────────────────────────────────
-// Automation Events
-// ────────────────────────────────
-export async function logAutomationEvent(subtype, data, streamerId = "global") {
-  await writeLog("automation", { ...data, streamerId, subtype });
-}
-
-// ────────────────────────────────
-// System / Backend Events
-// ────────────────────────────────
-export async function logSystemEvent(subtype, data = {}) {
-  await writeLog("system", { ...data, streamerId: "global", subtype });
-  console.log(`📜 [System] ${subtype} logged.`);
-}
-
-// ────────────────────────────────
-// Retrieve / Clear Logs
-// ────────────────────────────────
-export async function getLogs(streamerId = "global", limit = 50) {
-  return await Log.find({ streamerId }).sort({ createdAt: -1 }).limit(limit);
-}
-
-export async function clearLogs(streamerId = "global") {
-  await Log.deleteMany({ streamerId });
-  console.log(`🧹 Cleared logs for ${streamerId}`);
+/* ─────────────────────────────────────────────
+   ⚙️ Automation Logs
+─────────────────────────────────────────────── */
+export async function logAutomationEvent(streamerId, trigger, result = {}) {
+  try {
+    const log = new Log({
+      type: "automation",
+      subtype: normalizeSubtype(trigger?.type || "unknown"),
+      streamerId,
+      meta: { trigger, result },
+    });
+    await log.save();
+  } catch (err) {
+    console.warn("⚠️ Failed to save automation log:", err.message);
+  }
 }

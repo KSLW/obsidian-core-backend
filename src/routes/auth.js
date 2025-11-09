@@ -2,6 +2,7 @@
 import express from "express";
 import axios from "axios";
 import { Streamer } from "../models/Streamer.js";
+import { provisionDefaultsForStreamer } from "../utils/provisionDefaults.js";
 
 const router = express.Router();
 
@@ -81,6 +82,10 @@ router.get("/twitch/callback", async (req, res) => {
     console.error("Twitch OAuth error:", e.response?.data || e.message);
     res.status(500).send("Twitch OAuth failed");
   }
+
+  // inside auth/twitch callback
+  await provisionDefaultsForStreamer(streamer._id);
+
 });
 
 /* ─────────────────────────────────────────

@@ -63,7 +63,15 @@ const seedData = [
     console.log("🍃 Connected to MongoDB");
 
     await Automation.deleteMany({ streamerId: "global" });
-    await Automation.insertMany(seedData);
+    if (autoCount === 0) {
+    try {
+      await Automation.insertMany(DEFAULT_AUTOMATIONS, { ordered: false });
+      console.log(`🌱 Seeded ${DEFAULT_AUTOMATIONS.length} automations.`);
+    }   catch (err) {
+      console.error("⚠️ Some automations failed to insert:", err.writeErrors?.length || err.message);
+    }
+}
+
     console.log(`✅ Seeded ${seedData.length} automations.`);
 
     await mongoose.disconnect();

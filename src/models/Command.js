@@ -1,4 +1,3 @@
-// src/models/Command.js
 import mongoose from "mongoose";
 
 const commandSchema = new mongoose.Schema(
@@ -7,8 +6,9 @@ const commandSchema = new mongoose.Schema(
     name: { type: String, required: true, lowercase: true, trim: true },
     response: { type: String, required: true },
     enabled: { type: Boolean, default: true },
-    cooldown: { type: Number, default: 10 }, // seconds
+    cooldown: { type: Number, default: 10 },
     lastUsed: { type: Date, default: null },
+    isGlobal: { type: Boolean, default: false }, // 👈 add this
     permissions: {
       type: String,
       enum: ["everyone", "subscribers", "mods", "owner"],

@@ -5,10 +5,13 @@ import { Command } from "../models/Command.js";
 /* ────────────────────────────────
    🌱 Default Twitch Chat Automations
 ──────────────────────────────── */
+
+
 const DEFAULT_AUTOMATIONS = [
   // 🧃 Hydrate
   {
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.command",
     triggerName: "hydrate",
     enabled: true,
@@ -21,6 +24,7 @@ const DEFAULT_AUTOMATIONS = [
   // 💤 Lurk
   {
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.command",
     triggerName: "lurk",
     enabled: true,
@@ -30,7 +34,9 @@ const DEFAULT_AUTOMATIONS = [
   },
   // 🤝 Shoutout
   {
+    isGlobal: true,
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.command",
     triggerName: "so",
     enabled: true,
@@ -41,6 +47,7 @@ const DEFAULT_AUTOMATIONS = [
   // ⏱️ Uptime
   {
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.command",
     triggerName: "uptime",
     enabled: true,
@@ -54,6 +61,7 @@ const DEFAULT_AUTOMATIONS = [
   ───────────────────────────────── */
   {
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.keyword",
     triggerName: "vent",
     enabled: true,
@@ -68,6 +76,7 @@ const DEFAULT_AUTOMATIONS = [
   },
   {
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.keyword",
     triggerName: "suicide",
     enabled: true,
@@ -82,6 +91,7 @@ const DEFAULT_AUTOMATIONS = [
   },
   {
     streamerId: "global",
+    isGlobal: true,
     triggerType: "twitch.chat.keyword",
     triggerName: "depressed",
     enabled: true,

@@ -63,11 +63,8 @@ export async function initTwitch() {
     console.log(`🟣 Twitch bot connected as ${username} in #${channel}`);
     emitEvent(user._id?.toString() || "global", "twitch.connected", { username, channel });
 
-    await logTwitchEvent({
-      type: "connected",
-      user: username,
-      channel,
-    });
+    await logTwitchEvent("connected", { user: username, channel });
+
 
     // Ensure EventSub subscription
     if (user.ownerId && process.env.PUBLIC_URL && process.env.TWITCH_EVENTSUB_SECRET) {

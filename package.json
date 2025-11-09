@@ -15,6 +15,7 @@
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "mongodb": "^7.0.0",
     "mongoose": "^8.19.3",
     "nedb": "^1.8.0",
     "nedb-promise": "^2.0.1",

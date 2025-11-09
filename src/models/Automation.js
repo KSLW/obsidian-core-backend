@@ -1,22 +1,15 @@
-// src/models/Automation.js
 import mongoose from "mongoose";
 
-const ActionSchema = new mongoose.Schema(
-  {
-    type: { type: String, required: true }, // e.g., sendTwitchMessage, obsSceneSwitch, delay
-    payload: { type: mongoose.Schema.Types.Mixed, default: {} },
-  },
-  { _id: false }
-);
+const ActionSchema = new mongoose.Schema({
+  type: { type: String, required: true },
+  payload: { type: mongoose.Schema.Types.Mixed, default: {} },
+}, { _id: false });
 
-const ConditionsSchema = new mongoose.Schema(
-  {
-    textIncludes: { type: [String], default: [] }, // optional: for chat.message triggers
-    userIsMod: { type: Boolean, default: false },
-    cooldownSec: { type: Number, default: 0 },
-  },
-  { _id: false }
-);
+const ConditionsSchema = new mongoose.Schema({
+  textIncludes: { type: [String], default: [] },
+  userIsMod: { type: Boolean, default: false },
+  cooldownSec: { type: Number, default: 0 },
+}, { _id: false });
 
 const AutomationSchema = new mongoose.Schema(
   {
@@ -28,16 +21,19 @@ const AutomationSchema = new mongoose.Schema(
       enum: [
         "twitch.chat.command",
         "twitch.chat.message",
+        "twitch.chat.keyword",
+        "twitch.chat.filter",
         "twitch.redemption",
-        // add more later: "twitch.follow", "twitch.sub"
+        "twitch.follow",
+        "twitch.sub",
       ],
     },
-    triggerName: { type: String }, // command name or redemption title (optional for message trigger)
+    triggerName: { type: String },
     conditions: { type: ConditionsSchema, default: () => ({}) },
     actions: { type: [ActionSchema], default: [] },
+    isGlobal: { type: Boolean, default: false }, // 👈 add this
   },
   { timestamps: true }
 );
 
-export const Automation =
-  mongoose.models.Automation || mongoose.model("Automation", AutomationSchema);
+export const Automation = mongoose.model("Automation", AutomationSchema);
