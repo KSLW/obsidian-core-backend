@@ -84,7 +84,7 @@ router.get("/twitch/callback", async (req, res) => {
   }
 
   // inside auth/twitch callback
-  await provisionDefaultsForStreamer(streamer._id);
+  await provisionDefaultsForStreamer(Streamer._id);
 
 });
 

@@ -10,6 +10,7 @@ import { logSystemEvent } from "./core/logger.js";
 import { autoSeedAll } from "./setup/autoSeed.js";
 import { provisionDefaultsForStreamer } from "./utils/provisionDefaults.js";
 import { Streamer } from "./models/Streamer.js";
+import { startTokenRefreshLoop } from "./modules/twitch/auth.js";
 
 import authRoutes from "./routes/auth.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
@@ -68,6 +69,7 @@ server.listen(PORT, async () => {
   // Twitch bot + EventSub bootstrap
   try {
     await initTwitch();
+    startTokenRefreshLoop();
   } catch (e) {
     console.error("Twitch init error:", e?.message || e);
   }
