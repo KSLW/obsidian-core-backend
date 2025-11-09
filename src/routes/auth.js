@@ -27,6 +27,7 @@ router.get("/twitch", (req, res) => {
   // optional: pass state= to restore UI flow
   if (req.query.state) url.searchParams.set("state", String(req.query.state));
   res.redirect(url.toString());
+  
 });
 
 router.get("/twitch/callback", async (req, res) => {
@@ -39,10 +40,11 @@ router.get("/twitch/callback", async (req, res) => {
       params: {
         client_id: process.env.TWITCH_CLIENT_ID,
         client_secret: process.env.TWITCH_CLIENT_SECRET,
+          code,
         grant_type: "authorization_code",
-        redirect_uri: process.env.TWITCH_REDIRECT_URI,
-        code,
-      },
+        redirect_uri: `${process.env.BACKEND_URL}/api/auth/twitch/callback`,
+      }
+      
     });
 
     const accessToken = tokenRes.data.access_token;
@@ -73,6 +75,12 @@ router.get("/twitch/callback", async (req, res) => {
         channel: u.login,
       }
     );
+
+    console.log("🔑 OAuth Debug:", {
+  client_id: process.env.TWITCH_CLIENT_ID,
+  redirect_uri: `${process.env.BACKEND_URL}/api/auth/twitch/callback`,
+});
+
     await Streamer.updateOrCreateByOwner(u.id, { displayName: u.display_name });
 
     // 4) Redirect back to app
