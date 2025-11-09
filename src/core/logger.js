@@ -21,6 +21,7 @@ export async function logSystemEvent(subtype, data = {}) {
     const log = new Log({
       type: "system",
       subtype: normalizeSubtype(subtype),
+      platform: "system",
       meta: data,
     });
     await log.save();
