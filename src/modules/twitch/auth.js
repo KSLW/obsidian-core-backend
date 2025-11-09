@@ -4,28 +4,38 @@ import dotenv from "dotenv";
 import { Streamer } from "../../models/Streamer.js";
 dotenv.config({ path: process.env.ENV_PATH || ".env" });
 
-// 🧠 Helper to get a new app access token for EventSub, etc.
+/**
+ * Fetch an App Access Token for EventSub or server-to-server requests
+ */
 export async function getAppAccessToken() {
-  const res = await axios.post("https://id.twitch.tv/oauth2/token", null, {
-    params: {
-      client_id: process.env.TWITCH_CLIENT_ID,
-      client_secret: process.env.TWITCH_CLIENT_SECRET,
-      grant_type: "client_credentials",
-    },
-  });
-  return res.data.access_token;
+  const url = "https://id.twitch.tv/oauth2/token";
+  const params = {
+    client_id: process.env.TWITCH_CLIENT_ID,
+    client_secret: process.env.TWITCH_CLIENT_SECRET,
+    grant_type: "client_credentials",
+  };
+
+  try {
+    const res = await axios.post(url, null, { params });
+    return res.data.access_token;
+  } catch (e) {
+    console.error("⚠️ Failed to fetch app access token:", e.response?.data || e.message);
+    throw e;
+  }
 }
 
-// 🔁 Refresh a streamer's user OAuth token
+/**
+ * Refresh a Twitch user access token
+ */
 export async function refreshTwitchToken(ownerId) {
-  try {
-    const streamer = await Streamer.findOne({ ownerId });
-    if (!streamer?.twitchAuth?.refreshToken) {
-      console.warn("⚠️ No refresh token found for this streamer");
-      return null;
-    }
+  const streamer = await Streamer.findOne({ ownerId });
+  if (!streamer?.twitchAuth?.refreshToken) {
+    console.warn("⚠️ No refresh token for streamer:", ownerId);
+    return null;
+  }
 
-    const { data } = await axios.post("https://id.twitch.tv/oauth2/token", null, {
+  try {
+    const res = await axios.post("https://id.twitch.tv/oauth2/token", null, {
       params: {
         grant_type: "refresh_token",
         refresh_token: streamer.twitchAuth.refreshToken,
@@ -34,16 +44,15 @@ export async function refreshTwitchToken(ownerId) {
       },
     });
 
-    // Update Mongo
-    streamer.twitchAuth.accessToken = data.access_token;
-    streamer.twitchAuth.refreshToken = data.refresh_token;
+    streamer.twitchAuth.accessToken = res.data.access_token;
+    streamer.twitchAuth.refreshToken = res.data.refresh_token || streamer.twitchAuth.refreshToken;
+    streamer.twitchAuth.obtainedAt = Date.now();
     await streamer.save();
 
-    console.log("🔁 Twitch token refreshed successfully");
-    return data.access_token;
+    console.log(`🔁 Twitch token refreshed for ${streamer.displayName || streamer.ownerId}`);
+    return res.data.access_token;
   } catch (err) {
-    const msg = err.response?.data || err.message;
-    console.warn("⚠️ Twitch token refresh failed:", msg);
+    console.error("⚠️ Twitch token refresh failed:", err.response?.data || err.message);
     return null;
   }
 }
