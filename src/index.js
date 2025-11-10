@@ -10,21 +10,40 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 
+//config imports
 import { connectMongo } from "./config/database.js";
+
+//core imports
 import { createEventBus } from "./core/eventBus.js";
 import { logSystemEvent } from "./core/logger.js";
-import { autoSeedAll } from "./setup/autoSeed.js";
-import { provisionDefaultsForStreamer } from "./utils/provisionDefaults.js";
+
+//model imports
 import { Streamer } from "./models/Streamer.js";
 
+//utility imports
+import { provisionDefaultsForStreamer } from "./utils/provisionDefaults.js";
+
+//setup imports
+import { autoSeedAll } from "./setup/autoSeed.js";
+
+//module imports
 import { startTokenRefreshLoop } from "./modules/twitch/auth.js";
 import { initTwitch } from "./modules/twitch/index.js";
 import { initOBS } from "./modules/obs/index.js";
 
+
+//route imports
 import authRoutes from "./routes/auth.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
 import automationsRoutes from "./routes/automations.js";
+import commandsRoutes from "./routes/commands.js";
+import metadataRoutes from "./routes/metadata.js";
+
+//engine imports
 import { attachAutomationListeners } from "./engine/automationEngine.js";
+
+//middleware imports
+import { errorHandler } from "./middleware/errorHandler.js";
 
 // ─────────────────────────────────────────────
 // Express + HTTP Server Setup
@@ -40,6 +59,7 @@ app.use(
     credentials: true,
   })
 );
+app.use(errorHandler);
 
 // Healthcheck
 app.get("/api/health", (_req, res) =>
@@ -50,6 +70,8 @@ app.get("/api/health", (_req, res) =>
 app.use("/api/auth", authRoutes);
 app.use("/api/twitch/eventsub", twitchEventSubRoutes);
 app.use("/api/automations", automationsRoutes);
+app.use("/api/commands", commandsRoutes);
+app.use("/api/metadata", metadataRoutes);
 
 // ─────────────────────────────────────────────
 // WebSocket Event Bus

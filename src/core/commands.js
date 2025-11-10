@@ -1,6 +1,7 @@
 // src/core/commands.js
 import { Command } from "../models/Command.js";
 import { logTwitchEvent } from "./logger.js";
+import { parseTokens } from "../utils/tokenParser.js";
 
 /**
  * Get a command by name and streamerId
@@ -60,4 +61,50 @@ export async function deleteCommand(streamerId, name) {
 
 export async function listCommands(streamerId) {
   return Command.find({ streamerId });
+}
+
+import { parseTokens } from "../utils/tokenParser.js";
+
+export async function executeCommand(streamerId, name, username, twitchClient, channel, args = []) {
+  // 🔹 Built-in Variable Commands
+  if (name === "setvar") {
+    const [varName, ...rest] = args;
+    if (!varName || rest.length === 0) {
+      await twitchClient.say(channel, "Usage: !setvar [name] [value]");
+      return true;
+    }
+    const val = rest.join(" ");
+    await setVariable(streamerId, varName, val);
+    await twitchClient.say(channel, `✅ Variable "${varName}" set to "${val}"`);
+    return true;
+  }
+
+  if (name === "getvar") {
+    const [varName] = args;
+    const val = await getVariable(streamerId, varName);
+    await twitchClient.say(channel, val ? `📦 ${varName} = ${val}` : `⚠️ No variable named "${varName}"`);
+    return true;
+  }
+
+  if (name === "addvar") {
+    const [varName, numStr] = args;
+    const inc = parseInt(numStr || "1");
+    const val = await incrementVariable(streamerId, varName, inc);
+    await twitchClient.say(channel, `🔢 ${varName} = ${val}`);
+    return true;
+  }
+
+  // ✅ Dynamic command lookup
+  const cmd = await Command.findOne({ streamerId, name, enabled: true });
+  if (!cmd) return false;
+
+  const parsed = await parseTokens(cmd.response, {
+    username,
+    channel,
+    streamerName: channel,
+    streamerId,
+  });
+
+  await twitchClient.say(channel, parsed);
+  return true;
 }

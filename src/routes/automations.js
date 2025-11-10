@@ -1,65 +1,98 @@
 // src/routes/automations.js
 import express from "express";
 import { Automation } from "../models/Automation.js";
+import { emitEvent } from "../core/eventBus.js";
 
 const router = express.Router();
 
-/** Create */
-router.post("/", async (req, res) => {
+/* GET /api/automations?streamerId=global&limit=50&cursor=<id> */
+router.get("/", async (req, res, next) => {
   try {
-    const a = await Automation.create(req.body);
-    res.status(201).json(a);
+    const limit = Math.min(Number(req.query.limit || 50), 200);
+    const cursor = req.query.cursor;
+    const { streamerId, triggerType, enabled } = req.query;
+
+    const q = {};
+    if (streamerId) q.streamerId = String(streamerId);
+    if (triggerType) q.triggerType = String(triggerType);
+    if (enabled !== undefined) q.enabled = enabled === "true";
+    if (cursor) q._id = { $gt: cursor };
+
+    const rows = await Automation.find(q).sort({ _id: 1 }).limit(limit + 1).lean();
+    const hasMore = rows.length > limit;
+    const data = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? data[data.length - 1]._id : null;
+
+    res.json({ data, nextCursor });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    next(e);
   }
 });
 
-/** List (filter by streamerId optional) */
-router.get("/", async (req, res) => {
+/* POST /api/automations  (create) */
+router.post("/", async (req, res, next) => {
   try {
-    const { streamerId } = req.query;
-    const q = streamerId ? { streamerId } : {};
-    const items = await Automation.find(q).sort({ updatedAt: -1 });
-    res.json(items);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+    const {
+      streamerId = "global",
+      enabled = true,
+      triggerType,
+      triggerName = null,
+      conditions = {},
+      actions = [],
+    } = req.body;
 
-/** Get one */
-router.get("/:id", async (req, res) => {
-  try {
-    const item = await Automation.findById(req.params.id);
-    if (!item) return res.status(404).json({ error: "Not found" });
-    res.json(item);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
+    if (!triggerType) {
+      return res.status(400).json({ error: "triggerType is required" });
+    }
 
-/** Update */
-router.patch("/:id", async (req, res) => {
-  try {
-    const updated = await Automation.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
+    const doc = await Automation.create({
+      streamerId,
+      enabled,
+      triggerType,
+      triggerName,
+      conditions,
+      actions,
     });
-    if (!updated) return res.status(404).json({ error: "Not found" });
-    res.json(updated);
+
+    emitEvent(streamerId, "automations.updated", { id: doc._id.toString() });
+    res.status(201).json(doc);
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    next(e);
   }
 });
 
-/** Delete */
-router.delete("/:id", async (req, res) => {
+/* PATCH /api/automations/:id  (update) */
+router.patch("/:id", async (req, res, next) => {
   try {
-    const removed = await Automation.findByIdAndDelete(req.params.id);
-    if (!removed) return res.status(404).json({ error: "Not found" });
+    const { id } = req.params;
+
+    const allowed = ["streamerId", "enabled", "triggerType", "triggerName", "conditions", "actions"];
+    const update = {};
+    for (const k of allowed) if (k in req.body) update[k] = req.body[k];
+
+    const doc = await Automation.findByIdAndUpdate(id, update, { new: true });
+    if (!doc) return res.status(404).json({ error: "Automation not found" });
+
+    emitEvent(doc.streamerId, "automations.updated", { id: doc._id.toString() });
+    res.json(doc);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* DELETE /api/automations/:id */
+router.delete("/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const doc = await Automation.findByIdAndDelete(id);
+    if (!doc) return res.status(404).json({ error: "Automation not found" });
+
+    emitEvent(doc.streamerId, "automations.updated", { id });
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    next(e);
   }
 });
 
 export default router;
+8
