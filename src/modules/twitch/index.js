@@ -45,16 +45,11 @@ export async function initTwitch() {
     emitEvent(user._id?.toString() || "global", "twitch.connected", { username, channel });
     await logTwitchEvent("connected", { username, channel });
 
-    // ensure EventSub
-    if (user.ownerId && process.env.PUBLIC_URL && process.env.TWITCH_EVENTSUB_SECRET) {
-      try {
-        const appToken = await getAppAccessToken();
-        await ensureEventSub(user.ownerId, appToken);
-      } catch (e) {
-        console.warn("⚠️ EventSub ensure failed:", e.response?.data || e.message);
-      }
-    }
-  });
+    // ensure EventSubs are registered
+  if (user?.ownerId) {
+  await registerAllEventSubsForStreamer(user.ownerId);
+}
+});
 
   twitchClient.on("message", async (target, tags, message, self) => {
     if (self) return;

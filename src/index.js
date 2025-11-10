@@ -19,6 +19,7 @@ import { Streamer } from "./models/Streamer.js";
 
 import { startTokenRefreshLoop } from "./modules/twitch/auth.js";
 import { initTwitch } from "./modules/twitch/index.js";
+import { initOBS } from "./modules/obs/index.js";
 
 import authRoutes from "./routes/auth.js";
 import twitchEventSubRoutes from "./routes/twitchEventSub.js";
@@ -35,7 +36,7 @@ const server = http.createServer(app);
 app.use(express.json());
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "*",
+    origin: process.env.FRONTEND_URL,
     credentials: true,
   })
 );
@@ -108,6 +109,17 @@ const PORT = Number(process.env.PORT || 3000);
     console.error("🚨 Fatal boot error:", err.message);
     process.exit(1);
   }
+
+   try {
+    await initOBS();
+    await initTwitch();
+  } catch (e) {
+    console.error("Init error:", e?.message || e);
+  }
+
+  await logSystemEvent("backend_boot", { port: PORT, ws: WS_PORT });
+
+
 })();
 
 // ─────────────────────────────────────────────

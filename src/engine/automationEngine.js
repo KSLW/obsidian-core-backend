@@ -1,126 +1,113 @@
-// src/core/automationEngine.js
+// src/engine/automationEngine.js
 import { Automation } from "../models/Automation.js";
-import { onEvent } from "../core/eventBus.js";
-import { runActions } from "../core/actions.js";
+import { emitEvent, subscribeEvent } from "../core/eventBus.js";
+import { sendTwitchMessage } from "../modules/twitch/index.js";
 import { logAutomationEvent } from "../core/logger.js";
 
 /**
- * In-memory cooldown tracker: Map(automationId -> lastRunMs)
+ * Executes an automation's actions in sequence
  */
-const cooldownMap = new Map();
-
-/**
- * Evaluate whether an automation should run for a given event payload.
- */
-function shouldRun(automation, payload) {
-  // cooldown check
-  const cd = automation.conditions?.cooldownSec || 0;
-  if (cd > 0) {
-    const last = cooldownMap.get(automation._id?.toString());
-    if (last && Date.now() - last < cd * 1000) return false;
-  }
-
-  // Specific matching
-  const { triggerType, triggerName, conditions } = automation;
-  const { textIncludes = [], userIsMod = false } = conditions || {};
-  const isMod = Boolean(payload?.user?.isMod || payload?.isMod);
-
-  if (userIsMod && !isMod) return false;
-
-  switch (triggerType) {
-    case "twitch.chat.command": {
-      const incoming = (payload?.command || "").toLowerCase();
-      return triggerName && incoming === triggerName.toLowerCase();
-    }
-    case "twitch.redemption": {
-      const incoming = (payload?.reward || "").toLowerCase();
-      return triggerName && incoming === triggerName.toLowerCase();
-    }
-    case "twitch.chat.message": {
-      const msg = (payload?.message || "").toLowerCase();
-      if (triggerName && !msg.includes(triggerName.toLowerCase())) return false;
-      if (textIncludes?.length) {
-        return textIncludes.every((frag) => msg.includes(String(frag).toLowerCase()));
-      }
-      return true;
-    }
-    default:
-      return false;
-  }
-}
-
-/**
- * Run all automations that match an event.
- * @param {string} streamerId
- * @param {string} triggerType e.g. "twitch.chat.command"
- * @param {object} payload event payload
- */
-export async function runAutomations(streamerId, triggerType, payload = {}) {
-  const list = await Automation.find({ streamerId, enabled: true, triggerType }).lean();
-  if (!list?.length) return;
-
-  for (const auto of list) {
+async function executeAutomation(automation, context = {}) {
+  for (const action of automation.actions) {
+    const { type, payload } = action;
     try {
-      if (!shouldRun(auto, payload)) continue;
+      switch (type) {
+        case "sendTwitchMessage":
+          if (payload?.text) {
+            const msg = payload.text.replace("{username}", context.user || "user");
+            await sendTwitchMessage(msg, context.channel);
+          }
+          break;
 
-      // Set cooldown stamp
-      const id = auto._id?.toString();
-      const cd = auto.conditions?.cooldownSec || 0;
-      if (cd > 0 && id) cooldownMap.set(id, Date.now());
+        case "delay":
+          await new Promise((res) => setTimeout(res, payload?.ms || 1000));
+          break;
 
-      const vars = {
-        username: payload?.user?.name || payload?.user || "",
-        message: payload?.message || "",
-        reward: payload?.reward || "",
-        command: payload?.command || "",
-      };
+        case "obsSceneSwitch":
+          emitEvent(context.streamerId, "obs.scene.switch", payload);
+          break;
 
-      await logAutomationEvent(streamerId, {
-        automationId: id,
-        triggerType,
-        triggerName: auto.triggerName || null,
-        payload,
-        status: "running",
+        default:
+          console.warn(`⚠️ Unknown automation action type: ${type}`);
+      }
+
+      await logAutomationEvent(automation.streamerId, {
+        triggerType: automation.triggerType,
+        triggerName: automation.triggerName,
+        actionType: type,
+        context,
       });
-
-      await runActions(streamerId, auto.actions, { vars, rawEvent: payload });
-
-      await logAutomationEvent(streamerId, {
-        automationId: id,
-        triggerType,
-        triggerName: auto.triggerName || null,
-        payload,
-        status: "completed",
-      });
-    } catch (e) {
-      console.error("Automation failed:", auto._id?.toString(), e.message);
-      await logAutomationEvent(streamerId, {
-        automationId: auto._id?.toString(),
-        triggerType,
-        triggerName: auto.triggerName || null,
-        payload,
-        status: "error",
-        error: e.message,
-      });
+    } catch (err) {
+      console.error(`❌ Failed to execute action ${type}:`, err.message);
     }
   }
 }
 
 /**
- * Wire engine to internal event bus.
- * Your Twitch code should already be emitting:
- *  - emitEvent(streamerId, "twitch.chat.command", { user, command })
- *  - emitEvent(streamerId, "twitch.redemption", { user, reward })
- *  - emitEvent(streamerId, "twitch.chat.message", { user, message })
+ * Core handler to run automations by trigger
+ */
+async function handleTrigger(triggerType, triggerName, context = {}) {
+  const streamerId = context.streamerId || "global";
+
+  const automations = await Automation.find({
+    streamerId,
+    triggerType,
+    ...(triggerName ? { triggerName } : {}),
+    enabled: true,
+  });
+
+  if (!automations.length) return;
+
+  for (const automation of automations) {
+    await executeAutomation(automation, context);
+  }
+}
+
+/**
+ * Attach listeners to handle Twitch → automation mapping
  */
 export function attachAutomationListeners() {
-  onEvent("twitch.chat.command", async (streamerId, data) =>
-    runAutomations(streamerId, "twitch.chat.command", data)
-  );
-  onEvent("twitch.redemption", async (streamerId, data) =>
-    runAutomations(streamerId, "twitch.redemption", data)
-  );
-  onEvent("twitch.chat.message", async (streamerId, data) =>
-    runAutomations(streamerId, "twitch.chat.message", data)
-  );
+  // Twitch chat command trigger
+  subscribeEvent("twitch.chat.command", async (data) => {
+    await handleTrigger("twitch.chat.command", data.command, {
+      streamerId: data.streamerId,
+      user: data.user,
+      channel: data.channel,
+    });
+  });
+
+  // Twitch channel point redemptions
+  subscribeEvent("twitch.redemption", async (data) => {
+    await handleTrigger("twitch.redemption", data.reward_title, {
+      streamerId: data.streamerId,
+      user: data.user,
+    });
+  });
+
+  // Twitch follows
+  subscribeEvent("twitch.follow", async (data) => {
+    await handleTrigger("twitch.follow", null, {
+      streamerId: data.streamerId,
+      user: data.user_name,
+    });
+  });
+
+  // Twitch subs
+  subscribeEvent("twitch.subscribe", async (data) => {
+    await handleTrigger("twitch.subscribe", null, {
+      streamerId: data.streamerId,
+      user: data.user_name,
+    });
+  });
+
+  // Twitch raids
+  subscribeEvent("twitch.raid", async (data) => {
+    await handleTrigger("twitch.raid", null, {
+      streamerId: data.streamerId,
+      user: data.from_broadcaster_user_name,
+      viewers: data.viewers,
+    });
+  });
+
+  console.log("🎛️ Automation engine listeners active");
 }
