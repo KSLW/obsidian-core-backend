@@ -1,7 +1,7 @@
 import { subscribeEvent, emitEvent } from "../core/eventBus.js";
 import { Automation } from "../models/Automation.js";
 import { checkAutomationConditions } from "./automationConditions.js";
-import { runAutomation } from "./runAutomation.js";
+import { runAutomation } from "./runAutomations.js";
 
 export function attachAutomationListeners() {
   // chat message

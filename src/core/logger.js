@@ -38,3 +38,17 @@ export async function logModerationEvent(streamerId, entry) {
     console.warn("⚠️ Failed to save moderation log:", e.message);
   }
 }
+
+export async function logDiscordEvent(subtype, data = {}, streamerId) {
+  try {
+    await Log.create({
+      platform: "discord",
+      type: "discord",
+      subtype,
+      streamerId,
+      data,
+    });
+  } catch (e) {
+    console.warn("⚠️ Failed to save twitch log:", e.message);
+  }
+}
