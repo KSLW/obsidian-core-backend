@@ -1,17 +1,16 @@
-// models/ModerationLog.js
 import mongoose from "mongoose";
 
 const ModerationLogSchema = new mongoose.Schema(
   {
-    streamerId: { type: String, index: true, required: true },
+    streamerId: { type: String, required: true, index: true },
     platform: { type: String, default: "twitch" },
-    user: String,
-    message: String,
-    action: { type: String, enum: ["timeout", "delete", "flag"], default: "timeout" },
-    reason: String,
-    meta: mongoose.Schema.Types.Mixed,
+    user: { type: String, required: true },
+    message: { type: String, default: "" },
+    action: { type: String, enum: ["delete", "timeout", "ban"], default: "timeout" },
+    reason: { type: String, default: "" },
+    meta: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
 
-export const ModerationLog = mongoose.model("ModerationLog", ModerationLogSchema);
+export const ModerationLog = mongoose.models.ModerationLog || mongoose.model("ModerationLog", ModerationLogSchema);

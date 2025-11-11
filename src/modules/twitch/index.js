@@ -1,16 +1,15 @@
-// src/modules/twitch/index.js
 import tmi from "tmi.js";
 import axios from "axios";
 import { Streamer } from "../../models/Streamer.js";
 import { emitEvent } from "../../core/eventBus.js";
 import { logTwitchEvent, logModerationEvent } from "../../core/logger.js";
 import { checkMessageSafety } from "../../core/moderation.js";
+import { executeCommand } from "../../core/commands.js";
 import { getAppAccessToken, refreshTwitchToken } from "./auth.js";
 
 let twitchClient = null;
 let connected = false;
-
-const SIMPLE_HATE_FILTER = /(slur1|slur2|kill yourself|go back to)/i;
+const SIMPLE_FILTER = /(slur1|slur2|kill yourself|go back to)/i;
 
 export async function initTwitch() {
   const user = await Streamer.findOne({ "twitchAuth.accessToken": { $exists: true } }).sort({ updatedAt: -1 });
@@ -20,8 +19,8 @@ export async function initTwitch() {
   }
 
   let username = user.twitchBot?.username || process.env.TWITCH_BOT_USERNAME;
-  let channel = user.twitchBot?.channel || process.env.TWITCH_CHANNEL;
-  let token = user.twitchAuth?.accessToken || process.env.TWITCH_OAUTH_TOKEN;
+  let channel  = user.twitchBot?.channel  || process.env.TWITCH_CHANNEL;
+  let token    = user.twitchAuth?.accessToken || process.env.TWITCH_OAUTH_TOKEN?.replace(/^oauth:/, "");
 
   if (!username || !channel || !token) {
     console.warn("⚠️ Twitch credentials missing — attempting refresh...");
@@ -34,7 +33,7 @@ export async function initTwitch() {
   }
 
   twitchClient = new tmi.Client({
-    identity: { username, password: `oauth:${String(token).replace(/^oauth:/, "")}` },
+    identity: { username, password: `oauth:${token}` },
     channels: [channel],
     connection: { reconnect: true, secure: true },
   });
@@ -43,13 +42,24 @@ export async function initTwitch() {
     connected = true;
     console.log(`🟣 Twitch bot connected as ${username} in #${channel}`);
     emitEvent(user._id?.toString() || "global", "twitch.connected", { username, channel });
-    await logTwitchEvent("connected", { username, channel });
+    await logTwitchEvent("connected", { username, channel }, user._id?.toString());
 
-    // ensure EventSubs are registered
-  if (user?.ownerId) {
-  await registerAllEventSubsForStreamer(user.ownerId);
-}
-});
+    // Ensure EventSub (channel points)
+    if (user.ownerId && process.env.PUBLIC_URL && process.env.TWITCH_EVENTSUB_SECRET) {
+      try {
+        const appToken = await getAppAccessToken();
+        await ensureEventSub(user.ownerId, appToken);
+      } catch (e) {
+        console.warn("⚠️ EventSub ensure failed:", e.response?.data || e.message);
+      }
+    }
+  });
+
+  twitchClient.on("disconnected", (reason) => {
+    connected = false;
+    console.warn(`⚠️ Twitch bot disconnected: ${reason}`);
+    emitEvent("global", "twitch.disconnected", { reason });
+  });
 
   twitchClient.on("message", async (target, tags, message, self) => {
     if (self) return;
@@ -60,39 +70,69 @@ export async function initTwitch() {
 
     await logTwitchEvent("message", { user: display, channel: target, message: text }, streamerId);
 
-    if (SIMPLE_HATE_FILTER.test(text)) {
+    // simple filter
+    if (SIMPLE_FILTER.test(text)) {
       await timeoutUser(display, 600, "Hate speech / slur");
       await twitchClient.say(target, `⛔ Message removed. ${display} timed out.`);
-      await logModerationEvent(streamerId, { platform: "twitch", user: display, action: "timeout", reason: "hate_speech" });
+      emitEvent(streamerId, "twitch.moderation.timeout", { user: display, reason: "hate_speech" });
+      await logModerationEvent(streamerId, { platform: "twitch", user: display, action: "timeout", reason: "hate_speech", duration: 600 });
       return;
     }
 
-    const modHit = await checkMessageSafety(streamerId, text);
-    if (modHit) {
-      await timeoutUser(tags.username, modHit.duration, modHit.reason);
+    // advanced moderation
+    const hit = await checkMessageSafety(streamerId, text);
+    if (hit) {
+      const reason = hit.reason || "auto_mod";
+      if (hit.action === "ban") {
+        await twitchClient.say(target, `/ban ${tags.username} ${reason}`);
+      } else {
+        await timeoutUser(tags.username, hit.duration || 600, reason);
+      }
       await twitchClient.say(target, `⛔ Message removed. ${tags.username} timed out.`);
       await logModerationEvent(streamerId, {
         platform: "twitch",
         user: tags.username,
         message: text,
-        action: "timeout",
-        reason: modHit.reason,
+        action: hit.action || "timeout",
+        reason,
+        meta: { pattern: hit.pattern?.toString(), duration: hit.duration || 600 },
       });
       return;
+    }
+
+    // commands
+    if (text.startsWith("!")) {
+      const name = text.slice(1).split(" ")[0].toLowerCase();
+
+      const executed = await executeCommand(streamerId, name, display, twitchClient, target);
+      if (executed) {
+        emitEvent(streamerId, "twitch.chat.command", { user: display, command: name });
+        return;
+      }
+
+      // built-ins fallback
+      if (name === "hello") {
+        await twitchClient.say(target, `Hey ${display}! 👋`);
+        emitEvent(streamerId, "twitch.chat.command", { user: display, command: "hello" });
+        return;
+      }
     }
 
     emitEvent(streamerId, "twitch.chat", { user: display, message: text });
   });
 
-  await twitchClient.connect();
-  console.log("✅ Twitch client initialized.");
+  try {
+    await twitchClient.connect();
+    console.log("✅ Twitch client initialized.");
+  } catch (err) {
+    console.error("❌ Twitch init error:", err.message);
+  }
 
+  // token background maintenance
   setInterval(async () => {
     try {
       await refreshTwitchToken(user.ownerId);
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, 1000 * 60 * 60 * 24);
 }
 

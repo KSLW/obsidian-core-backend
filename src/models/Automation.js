@@ -1,35 +1,9 @@
-// src/models/Automation.js
 import mongoose from "mongoose";
 
-const VALID_ACTION_TYPES = [
-  "sendTwitchMessage",
-  "obsSceneSwitch",
-  "delay",
-  "timeoutUser",
-  "banUser",
-  "playSound",
-];
-
-const VALID_TRIGGER_TYPES = [
-  "twitch.chat.command",
-  "twitch.chat.message",
-  "twitch.redemption",
-  "twitch.follow",
-  "twitch.subscription",
-];
-
-// Define sub-schemas for structure clarity
 const ActionSchema = new mongoose.Schema(
   {
-    type: {
-      type: String,
-      required: true,
-      enum: VALID_ACTION_TYPES,
-    },
-    payload: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
+    type: { type: String, required: true },
+    payload: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { _id: false }
 );
@@ -37,13 +11,7 @@ const ActionSchema = new mongoose.Schema(
 const ConditionsSchema = new mongoose.Schema(
   {
     textIncludes: { type: [String], default: [] },
-    userIsMod: { type: Boolean, default: false },
-    cooldownSec: {
-      type: Number,
-      default: 0,
-      min: [0, "Cooldown must be >= 0"],
-      max: [3600, "Cooldown too long"],
-    },
+    cooldownSec: { type: Number, default: 0 },
   },
   { _id: false }
 );
@@ -55,26 +23,13 @@ const AutomationSchema = new mongoose.Schema(
     triggerType: {
       type: String,
       required: true,
-      enum: VALID_TRIGGER_TYPES,
+      enum: ["twitch.chat.command", "twitch.chat.message", "twitch.redemption"],
     },
-    triggerName: { type: String, default: null },
+    triggerName: { type: String },
     conditions: { type: ConditionsSchema, default: () => ({}) },
-    actions: {
-      type: [ActionSchema],
-      default: [],
-      validate: {
-        validator: (arr) => Array.isArray(arr) && arr.length <= 10,
-        message: "Max 10 actions per automation",
-      },
-    },
+    actions: { type: [ActionSchema], default: [] },
   },
   { timestamps: true }
 );
 
-export const Automation =
-  mongoose.models.Automation || mongoose.model("Automation", AutomationSchema);
-
-export const AUTOMATION_ENUMS = {
-  VALID_ACTION_TYPES,
-  VALID_TRIGGER_TYPES,
-};
+export const Automation = mongoose.models.Automation || mongoose.model("Automation", AutomationSchema);

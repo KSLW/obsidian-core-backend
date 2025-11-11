@@ -1,73 +1,58 @@
-// src/models/Streamer.js
 import mongoose from "mongoose";
 
 const TwitchAuthSchema = new mongoose.Schema(
   {
-    accessToken: { type: String },
-    refreshToken: { type: String },
-    scope: { type: [String], default: [] },
-    obtainedAt: { type: Date },
-    expiresIn: { type: Number },
+    accessToken: String,
+    refreshToken: String,
+    scope: [String],
+    obtainedAt: Number,
+    expiresIn: Number,
   },
   { _id: false }
 );
 
-const TwitchBotSchema = new mongoose.Schema(
+const BotSchema = new mongoose.Schema(
   {
-    username: { type: String },
-    channel: { type: String },
+    username: String,
+    channel: String,
   },
   { _id: false }
 );
 
 const StreamerSchema = new mongoose.Schema(
   {
-    ownerId: { type: String, index: true }, // internal app owner id (optional)
-    twitchId: { type: String, index: true, unique: true, sparse: true },
-    twitchUsername: { type: String },
-    displayName: { type: String },
+    ownerId: { type: String, required: true, unique: true },  // twitch user id
+    displayName: String,
+    twitchUsername: String,
 
     twitchAuth: { type: TwitchAuthSchema, default: () => ({}) },
-    twitchBot: { type: TwitchBotSchema, default: () => ({}) },
+    twitchBot: { type: BotSchema, default: () => ({}) },
 
-    moderation: {
-      safetyLevel: {
-        type: String,
-        enum: ["LOW", "MEDIUM", "HIGH"],
-        default: "MEDIUM",
-      },
-      customBanned: { type: [String], default: [] },
-    },
-
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
+    // reserved for discord later
+    discordAuth: { type: Object, default: null },
   },
   { timestamps: true }
 );
 
-/**
- * Static helper: setTwitchAuth
- * For initial OAuth or re-link
- */
-StreamerSchema.statics.setTwitchAuth = async function (twitchId, authData, botData) {
-  return this.findOneAndUpdate(
-    { twitchId },
-    {
-      twitchId,
-      twitchAuth: authData,
-      twitchBot: botData,
-      updatedAt: new Date(),
-    },
-    { upsert: true, new: true }
-  );
-};
+StreamersStatics(StreamerSchema);
 
-/**
- * Static helper: updateOrCreateByOwner
- * Useful when linking a Twitch account to an internal user
- */
-StreamerSchema.statics.updateOrCreateByOwner = async function (ownerId, updates) {
-  return this.findOneAndUpdate({ ownerId }, updates, { upsert: true, new: true });
-};
+function StreamersStatics(schema) {
+  schema.statics.updateOrCreateByOwner = async function (ownerId, update) {
+    const existing = await this.findOne({ ownerId });
+    if (existing) {
+      await this.updateOne({ ownerId }, { $set: update });
+      return this.findOne({ ownerId });
+    }
+    return this.create({ ownerId, ...update });
+  };
+
+  schema.statics.setTwitchAuth = async function (ownerId, auth, bot) {
+    return this.updateOrCreateByOwner(ownerId, {
+      twitchAuth: auth,
+      twitchBot: bot,
+      twitchUsername: bot?.username,
+    });
+  };
+}
 
 export const Streamer = mongoose.models.Streamer || mongoose.model("Streamer", StreamerSchema);

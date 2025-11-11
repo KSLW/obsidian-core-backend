@@ -1,14 +1,14 @@
-// backend/src/models/Log.js
 import mongoose from "mongoose";
 
-const logSchema = new mongoose.Schema({
-  platform: { type: String, enum: ["twitch", "discord", "obs", "system"], required: true },
-  type: { type: String, required: true },             // e.g. "message", "command", "moderation", "error"
-  user: { type: String },                             // user who triggered the event
-  channel: { type: String },
-  message: { type: String },
-  meta: { type: Object, default: {} },                // extra context
-  createdAt: { type: Date, default: Date.now },
-});
+const LogSchema = new mongoose.Schema(
+  {
+    platform: { type: String, required: true }, // system | twitch | discord
+    type: { type: String, required: true },     // system | twitch | discord
+    subtype: { type: String, default: "" },     // connected | message | command...
+    streamerId: { type: String, default: "global" },
+    data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true }
+);
 
-export const Log = mongoose.models.Log || mongoose.model("Log", logSchema);
+export const Log = mongoose.models.Log || mongoose.model("Log", LogSchema);

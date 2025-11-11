@@ -1,59 +1,24 @@
-// src/core/moderation.js
+import { ModerationLog } from "../models/ModerationLog.js";
 
-// Safety presets (extend later)
-export const SAFETY = {
-  LOW: [
-    { pattern: /(kill yourself)/i, action: "timeout", duration: 600, reason: "self-harm encouragement" },
-  ],
-  MEDIUM: [
-    { pattern: /(kill yourself)/i, action: "timeout", duration: 900, reason: "self-harm encouragement" },
-    { pattern: /(slur1|slur2)/i, action: "timeout", duration: 900, reason: "hate speech" },
-  ],
-  HIGH: [
-    { pattern: /(kill yourself)/i, action: "ban", reason: "self-harm encouragement" },
-    { pattern: /(slur1|slur2)/i, action: "ban", reason: "hate speech" },
-  ],
+const PRESET = {
+  LOW: [/kill yourself/i],
+  MEDIUM: [/go back to/i],
+  HIGH: [/slur1|slur2/i], // replace with your actual patterns
 };
 
-// simple in-memory moderation settings per streamer
-const settings = new Map(); // streamerId -> { level, customBanned[] }
-
-export function getModerationSettings(streamerId = "global") {
-  if (!settings.has(streamerId)) {
-    settings.set(streamerId, { level: "MEDIUM", customBanned: [] });
-  }
-  return settings.get(streamerId);
-}
-
-export function setModerationLevel(streamerId, level = "MEDIUM") {
-  const s = getModerationSettings(streamerId);
-  s.level = level;
-  settings.set(streamerId, s);
-  return s;
-}
-
-export function setCustomBanned(streamerId, words = []) {
-  const s = getModerationSettings(streamerId);
-  s.customBanned = words;
-  settings.set(streamerId, s);
-  return s;
-}
-
-export async function checkMessageSafety(streamerId, message) {
-  const s = getModerationSettings(streamerId);
-  const rules = [...SAFETY[s.level], ...s.customBanned.map((w) => ({
-    pattern: new RegExp(`\\b${escapeRegExp(w)}\\b`, "i"),
-    action: "timeout",
-    duration: 300,
-    reason: "custom banned",
-  }))];
-
-  for (const rule of rules) {
-    if (rule.pattern.test(message)) return rule;
+export async function checkMessageSafety(streamerId, text = "") {
+  // later: load per-streamer safety settings & custom banned words from DB
+  // for now we use MEDIUM as default
+  const rules = [...PRESET.LOW, ...PRESET.MEDIUM, ...PRESET.HIGH];
+  for (const pattern of rules) {
+    if (pattern.test(text)) {
+      return {
+        action: "timeout",
+        reason: "auto_mod",
+        duration: 600,
+        pattern,
+      };
+    }
   }
   return null;
-}
-
-function escapeRegExp(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
