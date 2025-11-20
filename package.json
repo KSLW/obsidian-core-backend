@@ -1,0 +1,21 @@
+{
+  "name": "obsidian-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "discord.js": "^14.25.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.19.0",
+    "mongoose": "^7.3.4",
+    "tim": "^6.5.2",
+    "tmi.js": "^1.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
