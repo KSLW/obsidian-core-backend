@@ -1,3 +1,4 @@
+// backend/services/settings.service.js
 const fs = require("fs");
 const path = require("path");
 
@@ -5,24 +6,23 @@ const SETTINGS_FILE = path.join(__dirname, "..", "data", "settings.json");
 
 function ensureFile() {
   if (!fs.existsSync(SETTINGS_FILE)) {
-    const defaults = {
+    const defaultSettings = {
       twitchClientId: "",
       twitchClientSecret: "",
       discordClientId: "",
       discordClientSecret: "",
-
       twitchAuth: null,
-      discordAuth: null
+      discordAuth: null,
     };
 
     fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaults, null, 2));
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2));
   }
 }
 
 async function getSettings() {
   ensureFile();
-  const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+  const raw = fs.readFileSync(SETTINGS_FILE, "utf8");
   return JSON.parse(raw);
 }
 
@@ -34,4 +34,7 @@ async function updateSettings(partial) {
   return updated;
 }
 
-module.exports = { getSettings, updateSettings };
+module.exports = {
+  getSettings,
+  updateSettings,
+};
