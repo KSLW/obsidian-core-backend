@@ -60,6 +60,14 @@ app.get("/api/health", (req, res) => {
 app.use("/api", authRoutes);
 app.use("/api", discordRoutes);
 
+// Discord OAuth
+router.get("/auth/discord/login", discordLogin);
+router.get("/auth/discord/callback", discordCallback);
+
+// Discord keys
+router.post("/auth/discord/keys", saveDiscordKeys);
+
+
 
 // --- START ---
 const PORT = process.env.PORT || 3001;
