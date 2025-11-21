@@ -1,8 +1,12 @@
 const { Client, GatewayIntentBits } = require("discord.js");
-
 let client = null;
 
-async function startDiscordBot() {
+async function startDiscordBot(settings) {
+  if (!settings.discord?.botToken) {
+    console.log("⚠️ Discord bot not started (no token).");
+    return;
+  }
+
   client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -12,21 +16,16 @@ async function startDiscordBot() {
   });
 
   client.once("ready", () => {
-    console.log(`✓ Discord bot logged in as ${client.user.tag}`);
+    console.log(`🔵 Discord bot logged in as ${client.user.tag}`);
   });
 
-  client.on("messageCreate", async (message) => {
-    // Skip bot messages
-    if (message.author.bot) return;
+  client.on("messageCreate", (msg) => {
+    if (msg.author.bot) return;
 
-    // The command engine will handle bot commands later
-    // Example:
-    // if (message.content.startsWith("!ping")) {
-    //   message.reply("Pong!");
-    // }
+    // reserved for future features
   });
 
-  await client.login(process.env.DISCORD_TOKEN);
+  await client.login(settings.discord.botToken);
 }
 
 module.exports = { startDiscordBot };

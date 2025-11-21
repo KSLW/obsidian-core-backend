@@ -1,11 +1,11 @@
 const mongoose = require("mongoose");
 
 const ModuleSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },   // internal ID, used by engine
-  name: { type: String, required: true },                // human-friendly name
-  description: { type: String, default: "" },
-  enabled: { type: Boolean, default: false },            // toggle module on/off
-  createdAt: { type: Date, default: Date.now }
+  id: { type: String, required: true },
+  name: { type: String, required: true },
+  description: String,
+  enabled: { type: Boolean, default: false }
 });
 
-module.exports = mongoose.model("Module", ModuleSchema);
+module.exports =
+  mongoose.models.Module || mongoose.model("Module", ModuleSchema);

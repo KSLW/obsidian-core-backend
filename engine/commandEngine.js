@@ -1,64 +1,21 @@
-const fs = require("fs");
-const path = require("path");
-const ModuleModel = require("../models/Module");
-
-let activeModules = [];
-
-async function loadModules() {
-  console.log("🔍 Loading modules...");
-
-  // Load module list from DB
-  const enabledModules = await ModuleModel.find({ enabled: true });
-  const enabledIds = enabledModules.map(m => m.id);
-
-  const moduleFiles = fs.readdirSync(path.join(__dirname, "../modules"))
-    .filter(f => f.endsWith(".module.js"));
-
-  activeModules = [];
-
-  for (const file of moduleFiles) {
-    const mod = require(path.join(__dirname, "../modules", file));
-
-    if (!enabledIds.includes(mod.id)) {
-      console.log(`- Skipping module: ${mod.name}`);
-      continue;
-    }
-
-    activeModules.push(mod);
-
-    if (typeof mod.onLoad === "function") {
-      mod.onLoad();
-    }
-
-    console.log(`✓ Loaded module: ${mod.name}`);
-  }
-}
-
-function getActiveModules() {
-  return activeModules;
-}
-
-// Run message hook
-async function runMessageHooks(payload) {
-  for (const mod of activeModules) {
-    if (typeof mod.onMessage === "function") {
-      await mod.onMessage(payload);
-    }
-  }
-}
-
-// Run event hook
-async function runEventHooks(type, payload) {
-  for (const mod of activeModules) {
-    if (typeof mod.onEvent === "function") {
-      await mod.onEvent(type, payload);
-    }
-  }
-}
+const Command = require("../models/Command");
 
 module.exports = {
-  loadModules,
-  getActiveModules,
-  runMessageHooks,
-  runEventHooks
+  async handleMessage({ client, channel, tags, message }) {
+    const settings = await Command.find({ enabled: true });
+
+    for (const cmd of settings) {
+      if (!cmd.trigger) continue;
+
+      const parts = message.trim().split(" ");
+      const triggerWord = parts[0].toLowerCase();
+
+      if (triggerWord === cmd.trigger.toLowerCase()) {
+        const response = cmd.response
+          .replace("{user}", tags["display-name"] || "user");
+
+        client.say(channel, response);
+      }
+    }
+  }
 };

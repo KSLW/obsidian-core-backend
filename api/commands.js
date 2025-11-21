@@ -1,50 +1,30 @@
-const express = require("express");
-const router = express.Router();
+const router = require("express").Router();
 const Command = require("../models/Command");
 
-// GET ALL COMMANDS
+// GET all
 router.get("/", async (req, res) => {
-  try {
-    const commands = await Command.find().sort({ name: 1 });
-    res.json(commands);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch commands." });
-  }
+  const cmds = await Command.find().sort({ createdAt: -1 });
+  res.json(cmds);
 });
 
-// CREATE NEW COMMAND
+// CREATE
 router.post("/", async (req, res) => {
-  try {
-    const cmd = new Command(req.body);
-    await cmd.save();
-    res.json(cmd);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+  const cmd = await Command.create(req.body);
+  res.json(cmd);
 });
 
-// UPDATE COMMAND
+// UPDATE
 router.put("/:id", async (req, res) => {
-  try {
-    const updated = await Command.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
-    res.json(updated);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+  const cmd = await Command.findByIdAndUpdate(req.params.id, req.body, {
+    new: true
+  });
+  res.json(cmd);
 });
 
-// DELETE COMMAND
+// DELETE
 router.delete("/:id", async (req, res) => {
-  try {
-    await Command.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(400).json({ error: "Failed to delete command." });
-  }
+  await Command.findByIdAndDelete(req.params.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;

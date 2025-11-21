@@ -1,19 +1,22 @@
 const mongoose = require("mongoose");
 
-async function connectDB() {
-  const URI = process.env.MONGO_URI || "mongodb://localhost:27017/obsidian";
-  
+module.exports = async function connectDB() {
+  const uri = process.env.MONGO_URI;
+
+  if (!uri) {
+    console.error("❌ MONGO_URI missing from .env");
+    process.exit(1);
+  }
+
   try {
-    await mongoose.connect(URI, {
+    await mongoose.connect(uri, {
       useNewUrlParser: true,
-      useUnifiedTopology: true,
+      useUnifiedTopology: true
     });
 
     console.log("✓ Connected to MongoDB");
   } catch (err) {
-    console.error("MongoDB connection error:", err);
+    console.error("❌ MongoDB Error:", err.message);
     process.exit(1);
   }
-}
-
-module.exports = connectDB;
+};

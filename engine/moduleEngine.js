@@ -1,26 +1,21 @@
 const fs = require("fs");
 const path = require("path");
-const ModuleModel = require("../models/Module");
 
 let activeModules = [];
 
 async function loadModules() {
   console.log("🔍 Loading modules...");
 
-  // Load module list from DB
-  const enabledModules = await ModuleModel.find({ enabled: true });
-  const enabledIds = enabledModules.map(m => m.id);
-
-  const moduleFiles = fs.readdirSync(path.join(__dirname, "../modules"))
-    .filter(f => f.endsWith(".module.js"));
+  const folder = path.join(__dirname, "../modules");
+  const files = fs.readdirSync(folder).filter(f => f.endsWith(".module.js"));
 
   activeModules = [];
 
-  for (const file of moduleFiles) {
-    const mod = require(path.join(__dirname, "../modules", file));
+  for (const file of files) {
+    const mod = require(path.join(folder, file));
 
-    if (!enabledIds.includes(mod.id)) {
-      console.log(`- Skipping module: ${mod.name}`);
+    if (!mod.enabled) {
+      console.log(`- Skipping disabled module: ${mod.name}`);
       continue;
     }
 
@@ -32,10 +27,6 @@ async function loadModules() {
 
     console.log(`✓ Loaded module: ${mod.name}`);
   }
-}
-
-function getActiveModules() {
-  return activeModules;
 }
 
 async function runMessageHooks(payload) {
@@ -56,7 +47,6 @@ async function runEventHooks(type, payload) {
 
 module.exports = {
   loadModules,
-  getActiveModules,
   runMessageHooks,
   runEventHooks
 };

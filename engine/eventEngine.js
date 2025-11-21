@@ -1,65 +1,22 @@
-const fs = require("fs");
-const path = require("path");
-const ModuleModel = require("../models/Module");
-
-let activeModules = [];
-
-async function loadModules() {
-  console.log("🔍 Loading modules...");
-
-  // Load from database
-  const enabledModules = await ModuleModel.find({ enabled: true });
-  const enabledIds = enabledModules.map(m => m.id);
-
-  const modulesPath = path.join(__dirname, "../modules");
-
-  const moduleFiles = fs.readdirSync(modulesPath)
-    .filter(f => f.endsWith(".module.js"));
-
-  activeModules = [];
-
-  for (const file of moduleFiles) {
-    const mod = require(path.join(modulesPath, file));
-
-    // Only load modules enabled in DB
-    if (!enabledIds.includes(mod.id)) {
-      console.log(`- Skipping module: ${mod.name}`);
-      continue;
-    }
-
-    activeModules.push(mod);
-
-    if (typeof mod.onLoad === "function") {
-      await mod.onLoad();
-    }
-
-    console.log(`✓ Loaded module: ${mod.name}`);
-  }
-}
-
-function getActiveModules() {
-  return activeModules;
-}
-
-async function runMessageHooks(payload) {
-  for (const mod of activeModules) {
-    if (typeof mod.onMessage === "function") {
-      await mod.onMessage(payload);
-    }
-  }
-}
-
-async function runEventHooks(type, payload) {
-  for (const mod of activeModules) {
-    if (typeof mod.onEvent === "function") {
-      await mod.onEvent(type, payload);
-    }
-  }
-}
+const Event = require("../models/Event");
+const { runEventHooks } = require("./moduleEngine");
 
 module.exports = {
-  loadModules,
-  getActiveModules,
-  runMessageHooks,
-  runEventHooks,
+  async handleEvent(type, data = {}) {
+    const evt = await Event.findOne({ type, enabled: true });
+    if (!evt) return;
+
+    let msg = evt.message
+      .replace("{user}", data.user || "Someone")
+      .replace("{months}", data.months || "0");
+
+    console.log(`[EVENT:${type}] → ${msg}`);
+
+    await runEventHooks(type, data);
+
+    // In the future:
+    // - send to Twitch
+    // - send to Discord
+    // - send to overlay
+  }
 };

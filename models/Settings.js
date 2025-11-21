@@ -5,26 +5,61 @@ const SettingsSchema = new mongoose.Schema({
   announcementsEnabled: { type: Boolean, default: true },
   aiResponses: { type: Boolean, default: false },
 
-  // Future expansion
   twitch: {
-    username: { type: String, default: "" },
-    channel: { type: String, default: "" }
+    username: String,
+    channel: String,
   },
 
   discord: {
     botEnabled: { type: Boolean, default: false }
   },
 
-  updatedAt: { type: Date, default: Date.now }
+  // --- NEW ---
+  twitchAuth: {
+    accessToken: String,
+    refreshToken: String,
+    expiresIn: Number,
+    obtainedAt: Number,
+    scope: [String],
+  },
+
+  discordAuth: {
+    accessToken: String,
+    refreshToken: String,
+    expiresIn: Number,
+    obtainedAt: Number,
+    scope: [String],
+  },
+
+  theme: { type: String, default: "dark" },
+  customTheme: {
+    primary: String,
+    secondary: String,
+    background: String,
+    text: String,
+  },
 });
 
-// Force single settings document
-SettingsSchema.statics.getSettings = async function () {
-  let settings = await this.findOne();
-  if (!settings) {
-    settings = await this.create({});
+SettingsSchema.statics.get = async function() {
+  let s = await this.findOne();
+  if (!s) {
+    s = await this.create({
+      prefix: "!",
+      announcementsEnabled: true,
+      aiResponses: false,
+      twitch: {},
+      discord: {},
+      theme: "dark",
+      customTheme: {
+        primary: "#8e7cff",
+        secondary: "#7d6cff",
+        background: "#1a1a1a",
+        text: "#ffffff"
+      }
+    });
   }
-  return settings;
+  return s;
 };
+
 
 module.exports = mongoose.model("Settings", SettingsSchema);

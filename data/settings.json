@@ -1,0 +1,8 @@
+{
+  "twitchClientId": "t9dsw6q7gfcap516c9q34o1nokguv2",
+  "twitchClientSecret": "63jsiqgo6zgt5cba6bd8yi1nkynbs1",
+  "discordClientId": "",
+  "discordClientSecret": "",
+  "twitchAuth": null,
+  "discordAuth": null
+}

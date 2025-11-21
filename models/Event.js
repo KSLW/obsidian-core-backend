@@ -1,10 +1,11 @@
 const mongoose = require("mongoose");
 
 const EventSchema = new mongoose.Schema({
-  type: { type: String, required: true, unique: true },  // "Sub", "Follow", "Raid", etc.
-  message: { type: String, default: "" },                // "Thanks {user} for subbing!"
+  type: { type: String, required: true },
+  message: { type: String, required: true },
   enabled: { type: Boolean, default: true },
-  updatedAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model("Event", EventSchema);
+module.exports =
+  mongoose.models.Event || mongoose.model("Event", EventSchema);
