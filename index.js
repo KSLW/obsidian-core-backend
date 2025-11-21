@@ -12,6 +12,10 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
