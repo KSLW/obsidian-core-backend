@@ -4,6 +4,8 @@ const bodyParser = require("body-parser");
 require("dotenv").config();
 
 const authRoutes = require("./routes/auth.routes");
+const discordRoutes = require("./routes/discord.routes");
+
 
 const app = express();
 
@@ -56,6 +58,8 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api", authRoutes);
+app.use("/api", discordRoutes);
+
 
 // --- START ---
 const PORT = process.env.PORT || 3001;
