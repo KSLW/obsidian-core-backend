@@ -7,32 +7,27 @@ const bodyParser = require("body-parser");
 const authRoutes = require("./routes/auth.routes");
 
 const app = express();
+
+const cors = require("cors");
+
 const allowedOrigins = [
-  process.env.FRONTEND_URL, // deployed frontend
+  process.env.FRONTEND_URL,          // your deployed dashboard
 ].filter(Boolean);
 
-// Middleware
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like curl or mobile apps)
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // mobile apps, curl, etc.
+      if (allowedOrigins.includes(origin)) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      } else {
-        console.log("❌ BLOCKED ORIGIN:", origin);
-        return callback(
-          new Error("Not allowed by CORS – origin: " + origin),
-          false
-        );
-      }
+      console.log("❌ BLOCKED BY CORS:", origin);
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+
 app.use(bodyParser.json());
 
 app.get("/", (req, res) => {
