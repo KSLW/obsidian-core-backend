@@ -40,7 +40,7 @@ async function saveTwitchKeys(req, res) {
 async function twitchLogin(req, res) {
   try {
     const settings = await getSettings();
-    const clientId = settings.twitchClientId;
+    const clientId = process.env.TWITCH_CLIENT_ID;
 
     if (!clientId) {
       return res.status(400).send("Twitch Client ID not set.");
@@ -88,8 +88,8 @@ async function twitchCallback(req, res) {
 
   try {
     const settings = await getSettings();
-    const clientId = settings.twitchClientId;
-    const clientSecret = settings.twitchClientSecret;
+    const clientId = process.env.TWITCH_CLIENT_ID;
+    const clientSecret = process.env.TWITCH_CLIENT_SECRET;
     const redirectUri = process.env.TWITCH_REDIRECT_URI;
 
     if (!clientId || !clientSecret) {

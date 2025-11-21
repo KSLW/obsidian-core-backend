@@ -3,7 +3,7 @@ import { getSettings } from "../../../";
 async function twitchLogin(req, res) {
   try {
     const settings = await getSettings();
-    const clientId = settings.twitchClientId;
+    const clientId = process.env.TWITCH_CLIENT_ID;
 
     if (!clientId) {
       return res
