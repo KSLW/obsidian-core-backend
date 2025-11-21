@@ -1,48 +1,63 @@
-// backend/index.js
-require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+require("dotenv").config();
 
 const authRoutes = require("./routes/auth.routes");
 
 const app = express();
 
-const cors = require("cors");
-
+/**
+ * CORS FIX: works on Render + Vercel + localhost
+ */
 const allowedOrigins = [
-  process.env.FRONTEND_URL,          // your deployed dashboard
+  process.env.FRONTEND_URL?.replace(/\/$/, ""), // remove trailing slash
+  "http://localhost:3000",
+  "http://localhost:5173",
 ].filter(Boolean);
+
+console.log("Allowed origins:", allowedOrigins);
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // mobile apps, curl, etc.
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+    origin: (origin, callback) => {
+      if (!origin) {
+        // curl, postman, mobile, server → OK
+        return callback(null, true);
+      }
 
-      console.log("❌ BLOCKED BY CORS:", origin);
-      return callback(new Error("Not allowed by CORS"));
+      const cleanOrigin = origin.replace(/\/$/, "");
+
+      if (allowedOrigins.includes(cleanOrigin)) {
+        return callback(null, true);
+      }
+
+      console.log("❌ BLOCKED ORIGIN:", origin);
+      return callback(new Error("CORS Not allowed"));
     },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
 
+// REQUIRED for browser preflight
+app.options("*", cors());
 
 app.use(bodyParser.json());
 
+// --- ROUTES ---
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
-// Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Routes
 app.use("/api", authRoutes);
 
-// Start server
+// --- START ---
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`);
