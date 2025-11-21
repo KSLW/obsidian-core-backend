@@ -1,37 +1,6 @@
+// backend/controllers/auth.controller.js
 const axios = require("axios");
 const { getSettings, updateSettings } = require("../services/settings.service");
-
-// GET /api/settings
-async function getSettingsController(req, res) {
-  try {
-    const settings = await getSettings();
-    res.json(settings);
-  } catch (err) {
-    console.error("Failed to load settings", err);
-    res.status(500).json({ error: "Failed to load settings" });
-  }
-}
-
-// POST /api/auth/twitch/keys
-async function saveTwitchKeys(req, res) {
-  try {
-    const { twitchClientId, twitchClientSecret } = req.body;
-
-    if (!twitchClientId || !twitchClientSecret) {
-      return res.status(400).json({ error: "Both values are required" });
-    }
-
-    const updated = await updateSettings({
-      twitchClientId,
-      twitchClientSecret
-    });
-
-    res.json({ success: true, settings: updated });
-  } catch (err) {
-    console.error("Error saving Twitch keys", err);
-    res.status(500).json({ error: "Failed to save keys" });
-  }
-}
 
 // GET /api/auth/twitch/login
 async function twitchLogin(req, res) {
@@ -44,23 +13,30 @@ async function twitchLogin(req, res) {
     }
 
     const redirectUri = process.env.TWITCH_REDIRECT_URI;
+    if (!redirectUri) {
+      return res.status(500).send("TWITCH_REDIRECT_URI not configured.");
+    }
+
     const scope = [
+      "user:read:email",
       "chat:read",
       "chat:edit",
-      "user:read:email",
-      "moderator:manage:shoutouts"
+      "moderator:read:chat_settings",
+      "moderator:manage:chat_settings",
     ].join(" ");
 
-    const link = new URL("https://id.twitch.tv/oauth2/authorize");
-    link.searchParams.set("client_id", clientId);
-    link.searchParams.set("redirect_uri", redirectUri);
-    link.searchParams.set("response_type", "code");
-    link.searchParams.set("scope", scope);
+    const authUrl = new URL("https://id.twitch.tv/oauth2/authorize");
+    authUrl.searchParams.set("client_id", clientId);
+    authUrl.searchParams.set("redirect_uri", redirectUri);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", scope);
 
-    res.redirect(link.toString());
+    console.log("[Twitch] Redirecting to:", authUrl.toString());
+
+    return res.redirect(authUrl.toString());
   } catch (err) {
-    console.error("Twitch login error", err);
-    res.status(500).send("Failed to start OAuth");
+    console.error("[Twitch] Login error:", err);
+    res.status(500).send("Failed to start Twitch OAuth");
   }
 }
 
@@ -69,87 +45,68 @@ async function twitchCallback(req, res) {
   const { code, error } = req.query;
 
   if (error) {
-    return res.status(400).send("OAuth Error: " + error);
+    console.error("[Twitch] OAuth error:", error);
+    return res.status(400).send("Twitch OAuth error: " + error);
+  }
+
+  if (!code) {
+    return res.status(400).send("Missing ?code in Twitch callback.");
   }
 
   try {
     const settings = await getSettings();
     const clientId = settings.twitchClientId;
     const clientSecret = settings.twitchClientSecret;
-
     const redirectUri = process.env.TWITCH_REDIRECT_URI;
+
+    if (!clientId || !clientSecret) {
+      return res.status(400).send("Twitch Client ID/Secret not configured.");
+    }
+
+    console.log("[Twitch] Exchanging code for tokens...");
+
+    const params = new URLSearchParams();
+    params.append("client_id", clientId);
+    params.append("client_secret", clientSecret);
+    params.append("code", code);
+    params.append("grant_type", "authorization_code");
+    params.append("redirect_uri", redirectUri);
 
     const tokenRes = await axios.post(
       "https://id.twitch.tv/oauth2/token",
-      null,
-      {
-        params: {
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-          grant_type: "authorization_code",
-          redirect_uri: redirectUri
-        },
-      }
+      params
     );
 
-    const data = tokenRes.data;
+    const tokenData = tokenRes.data;
+    console.log("[Twitch] Token response:", tokenData);
 
-    await updateSettings({
-      twitchAuth: {
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        expiresIn: data.expires_in,
-        tokenType: data.token_type,
-        scope: data.scope,
-        obtainedAt: Date.now(),
-      },
-    });
+    const twitchAuth = {
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresIn: tokenData.expires_in,
+      scope: tokenData.scope,
+      tokenType: tokenData.token_type,
+      obtainedAt: Date.now(),
+    };
 
-    return res.redirect(
-      process.env.FRONTEND_URL + "/dashboard"
+    await updateSettings({ twitchAuth });
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    console.log("[Twitch] Auth success, redirecting to", frontendUrl + "/dashboard");
+
+    return res.redirect(frontendUrl + "/dashboard");
+  } catch (err) {
+    console.error(
+      "[Twitch] OAuth exchange failed:",
+      err.response?.data || err.message
     );
-  } catch (err) {
-    console.error("OAuth Exchange Failed:", err.response?.data || err);
-    return res.status(500).send("OAuth Exchange Failed");
+    res.status(500).send("OAuth Exchange Failed");
   }
 }
-
-
-// POST /api/auth/reset/:provider
-async function resetAuth(req, res) {
-  try {
-    const updated =
-      req.params.provider === "twitch"
-        ? await updateSettings({ twitchAuth: null })
-        : req.params.provider === "discord"
-        ? await updateSettings({ discordAuth: null })
-        : null;
-
-    if (!updated) return res.status(400).json({ error: "Unknown provider" });
-
-    res.json({ success: true, settings: updated });
-  } catch (err) {
-    console.error("Reset error", err);
-    res.status(500).json({ error: "Failed to reset auth" });
-  }
-}
-
-async function updateSettingsController(req, res) {
-  try {
-    const updated = await updateSettings(req.body);
-    res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to update settings" });
-  }
-}
-
 
 module.exports = {
-  getSettingsController,
-  saveTwitchKeys,
+  // ...other handlers...
+  updateSettings,
   twitchLogin,
   twitchCallback,
-  resetAuth,
-  updateSettingsController
 };
