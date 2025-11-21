@@ -1,17 +1,32 @@
-const express = require("express");
-const router = express.Router();
+import { getSettings } from "../../../";
 
-router.get("/login", (req, res) => {
-  const redirect = process.env.TWITCH_REDIRECT_URI;
+async function twitchLogin(req, res) {
+  try {
+    const settings = await getSettings();
+    const clientId = settings.twitchClientId;
 
-  const url =
-    `https://id.twitch.tv/oauth2/authorize?` +
-    `client_id=${process.env.TWITCH_CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(redirect)}` +
-    `&response_type=code` +
-    `&scope=user:read:email chat:read chat:edit`;
+    if (!clientId) {
+      return res
+        .status(400)
+        .send("Twitch Client ID not set.");
+    }
 
-  res.redirect(url);
-});
+    const redirectUri = process.env.TWITCH_REDIRECT_URI;
+    const scope = [
+      "user:read:email",
+      "chat:read",
+      "chat:edit"
+    ].join(" ");
 
-module.exports = router;
+    const authUrl = new URL("https://id.twitch.tv/oauth2/authorize");
+    authUrl.searchParams.set("client_id", clientId);
+    authUrl.searchParams.set("redirect_uri", redirectUri);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", scope);
+
+    return res.redirect(authUrl.toString());
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).send("Failed to start Twitch OAuth");
+  }
+}

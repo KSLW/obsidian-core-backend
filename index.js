@@ -12,7 +12,12 @@ const systemRoutes = require("./routes/system.routes");
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    "https://dashboard-3let.onrender.com"
+  ],
+  credentials: true
+}));
 app.use(bodyParser.json());
 
 // Mount all API route groups under /api

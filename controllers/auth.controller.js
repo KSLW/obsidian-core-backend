@@ -66,10 +66,10 @@ async function twitchLogin(req, res) {
 
 // GET /api/auth/twitch/callback
 async function twitchCallback(req, res) {
-  const { code } = req.query;
+  const { code, error } = req.query;
 
-  if (!code) {
-    return res.status(400).send("Missing OAuth code");
+  if (error) {
+    return res.status(400).send("OAuth Error: " + error);
   }
 
   try {
@@ -77,7 +77,9 @@ async function twitchCallback(req, res) {
     const clientId = settings.twitchClientId;
     const clientSecret = settings.twitchClientSecret;
 
-    const response = await axios.post(
+    const redirectUri = process.env.TWITCH_REDIRECT_URI;
+
+    const tokenRes = await axios.post(
       "https://id.twitch.tv/oauth2/token",
       null,
       {
@@ -86,29 +88,33 @@ async function twitchCallback(req, res) {
           client_secret: clientSecret,
           code,
           grant_type: "authorization_code",
-          redirect_uri: process.env.TWITCH_REDIRECT_URI
-        }
+          redirect_uri: redirectUri
+        },
       }
     );
 
-    const tokenData = response.data;
+    const data = tokenRes.data;
 
     await updateSettings({
       twitchAuth: {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiresIn: tokenData.expires_in,
-        obtainedAt: Date.now()
-      }
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresIn: data.expires_in,
+        tokenType: data.token_type,
+        scope: data.scope,
+        obtainedAt: Date.now(),
+      },
     });
 
-    const frontend = process.env.FRONTEND_URL || "http://localhost:3000";
-    res.redirect(frontend + "/dashboard");
+    return res.redirect(
+      process.env.FRONTEND_URL + "/dashboard"
+    );
   } catch (err) {
-    console.error("Twitch callback error:", err.response?.data || err);
-    res.status(500).send("OAuth Exchange Failed");
+    console.error("OAuth Exchange Failed:", err.response?.data || err);
+    return res.status(500).send("OAuth Exchange Failed");
   }
 }
+
 
 // POST /api/auth/reset/:provider
 async function resetAuth(req, res) {
