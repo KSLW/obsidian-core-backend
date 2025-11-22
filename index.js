@@ -1,76 +1,59 @@
+// backend/index.js
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-require("dotenv").config();
 
 const authRoutes = require("./routes/auth.routes");
-const discordRoutes = require("./routes/discord.routes");
-
 
 const app = express();
 
-/**
- * CORS FIX: works on Render + Vercel + localhost
- */
+// ---------------------
+// CORS SETTINGS
+// ---------------------
 const allowedOrigins = [
-  process.env.FRONTEND_URL?.replace(/\/$/, ""), // remove trailing slash
-  "http://localhost:3000",
-  "http://localhost:5173",
+  process.env.FRONTEND_URL,      // deployed frontend
+  "http://localhost:3000",       // local dev fallback
 ].filter(Boolean);
-
-console.log("Allowed origins:", allowedOrigins);
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) {
-        // curl, postman, mobile, server → OK
-        return callback(null, true);
-      }
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // mobile / curl / server
+      if (allowedOrigins.includes(origin)) return callback(null, true);
 
-      const cleanOrigin = origin.replace(/\/$/, "");
-
-      if (allowedOrigins.includes(cleanOrigin)) {
-        return callback(null, true);
-      }
-
-      console.log("❌ BLOCKED ORIGIN:", origin);
-      return callback(new Error("CORS Not allowed"));
+      console.log("❌ CORS BLOCKED:", origin);
+      callback(new Error("Not allowed by CORS"));
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
 
-// REQUIRED for browser preflight
-app.options("*", cors());
-
+// Parse JSON
 app.use(bodyParser.json());
 
-// --- ROUTES ---
+// ---------------------
+// ROUTES
+// ---------------------
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
+// Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+// OAuth + Settings routes
 app.use("/api", authRoutes);
-app.use("/api", discordRoutes);
 
-// Discord OAuth
-router.get("/auth/discord/login", discordLogin);
-router.get("/auth/discord/callback", discordCallback);
-
-// Discord keys
-router.post("/auth/discord/keys", saveDiscordKeys);
-
-
-
-// --- START ---
+// ---------------------
+// START SERVER
+// ---------------------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`);
+  console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
+  console.log("TWITCH_REDIRECT_URI:", process.env.TWITCH_REDIRECT_URI);
+  console.log("DISCORD_REDIRECT_URI:", process.env.DISCORD_REDIRECT_URI);
 });
